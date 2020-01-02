@@ -24,10 +24,14 @@ def resolve_node_handler(node_type: str) -> Callable:
     """
     if 'Line' == node_type:
         return line_handler
-    elif 'Text2' == node_type:
+    elif 'CenterLine' == node_type:
+        return centerline_handler
+    elif 'Text' == node_type:
         return text_handler
     elif 'Circle' == node_type:
         return circle_handler
+    elif 'Equipment' == node_type:
+        return equipment_handler
     return dummy_handler
     # raise NotImplementedError(f'handler for {node_type} is not implemented yet')
 
@@ -53,11 +57,14 @@ def line_handler(node: XMLParse.Element, ctx: Context) -> svgwrite.shapes.Line:
     stroke_color = fetch_color_from_presentation(presentation_obj)
     stroke_width = float(presentation_obj.attrib.get('LineWeight'))
 
-    x_min, y_min = itemgetter('X', 'Y')(coordinates[0].attrib)
-    x_max, y_max = itemgetter('X', 'Y')(coordinates[1].attrib)
+    x_min_str, y_min_str = itemgetter('X', 'Y')(coordinates[0].attrib)
+    x_max_str, y_max_str = itemgetter('X', 'Y')(coordinates[1].attrib)
 
-    line = svgwrite.shapes.Line(start=(float(x_min), ctx.y_max - float(y_min)),
-                                end=(float(x_max), ctx.y_max - float(y_max)), stroke=stroke_color,
+    x_min_f, y_min_f, x_max_f, y_max_f = map(float, (x_min_str, y_min_str, x_max_str, y_max_str))
+
+    line = svgwrite.shapes.Line(start=(x_min_f, ctx.y_max - y_min_f),
+                                end=(x_max_f, ctx.y_max - y_max_f),
+                                stroke=stroke_color,
                                 style=f'stroke-width:{stroke_width}')
 
     line_type = fetch_line_type_from_presentation(presentation_obj)
@@ -73,12 +80,27 @@ def centerline_handler(node: XMLParse.Element, ctx: Context) -> svgwrite.path.Pa
     if presentation_obj is None:
         raise AssertionError(f'"Presentation" node expected but not found in Line node')
 
+    stroke_color = fetch_color_from_presentation(presentation_obj)
+    stroke_width = float(presentation_obj.attrib.get('LineWeight'))
+
     coordinates = node.findall('Coordinate')
+    is_filled = True if node.attrib.get('Filled') else False
+    path = svgwrite.path.Path(None, stroke=stroke_color,
+                              fill='none' if not is_filled else stroke_color,
+                              style=f'stroke-width:{stroke_width}')
 
-    path = svgwrite.path.Path()
-
+    start_point = True
     for coordinate in coordinates:
+        operation = 'M' if start_point else 'L'
+        start_point = False
         x_, y_ = itemgetter('X', 'Y')(coordinate.attrib)
+        path.push(operation, float(x_), ctx.y_max - float(y_))
+
+    line_type = fetch_line_type_from_presentation(presentation_obj)
+    if line_type:
+        path.dasharray(line_type)
+
+    return path
 
 
 def text_handler(node: XMLParse.Element, ctx: Context) -> svgwrite.text.Text:
@@ -127,6 +149,12 @@ def text_handler(node: XMLParse.Element, ctx: Context) -> svgwrite.text.Text:
 
 
 def circle_handler(node: XMLParse.Element, ctx: Context) -> svgwrite.shapes.Circle:
+    """
+    handler to transform Proteus Circle object to SVG Circle object
+    :param node: XML node with Proteus circle definition
+    :param ctx: Proteus model context
+    :return: SVG Circle object
+    """
     ensure_type(node, 'Circle')
     presentation_obj = node.find("Presentation")
 
@@ -136,13 +164,52 @@ def circle_handler(node: XMLParse.Element, ctx: Context) -> svgwrite.shapes.Circ
     stroke_color = fetch_color_from_presentation(presentation_obj)
     stroke_width = float(presentation_obj.attrib.get('LineWeight'))
     radius = float(node.attrib.get('Radius'))
+    is_filled = True if node.attrib.get('Filled') else False
     coordinates = node.find('Position').find('Location')
     x_pos, y_pos = itemgetter('X', 'Y')(coordinates.attrib)
 
-    circle = svgwrite.shapes.Circle((float(x_pos), ctx.y_max - float(y_pos)), radius, fill='none', stroke=stroke_color,
+    circle = svgwrite.shapes.Circle((float(x_pos), ctx.y_max - float(y_pos)), radius,
+                                    fill='none' if not is_filled else stroke_color,
+                                    stroke=stroke_color,
                                     style=f'stroke-width:{stroke_width}')
 
     return circle
+
+
+def extent_handler(node: XMLParse.Element, ctx: Context) -> svgwrite.shapes.Rect:
+    """
+    handler to transform Proteus Extent object to SVG Circle object
+    :param node: XML node with Proteus extent definition
+    :param ctx: Proteus model context
+    :return: SVG Rect object
+    """
+    ensure_type(node, 'Extent')
+    stroke_width = 0.1
+    x_min_str, y_min_str = itemgetter('X', 'Y')(node.find('Min').attrib)
+    x_max_str, y_max_str = itemgetter('X', 'Y')(node.find('Max').attrib)
+
+    x_min_f, y_min_f, x_max_f, y_max_f = map(float, (x_min_str, y_min_str, x_max_str, y_max_str))
+    y_min_f = ctx.y_max - y_min_f
+    y_max_f = ctx.y_max - y_max_f
+    rect_width = x_max_f - x_min_f
+    rect_height = y_min_f - y_max_f
+    return svgwrite.shapes.Rect((x_min_f, y_min_f - rect_height), (rect_width, rect_height),
+                                stroke='red',
+                                fill='none',
+                                style=f'stroke-width:{stroke_width}',
+                                onmouseover='evt.target.setAttribute("fill", "blue")',
+                                onmouseout='evt.target.setAttribute("fill", "none")')
+
+
+def equipment_handler(node: XMLParse.Element, ctx: Context) -> svgwrite.shapes.Rect:
+    """
+    special case handler that process nothing and returns None
+    :param node: node to process
+    :param ctx: model context
+    :return: always None
+    """
+    extent_rect = extent_handler(node.find('Extent'), ctx)
+    return extent_rect
 
 
 def dummy_handler(node: XMLParse.Element, ctx: Context) -> None:
