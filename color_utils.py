@@ -54,5 +54,5 @@ def fetch_color_from_presentation(pr_obj: XMLParse.Element) -> str:
     :return: color as hex string
     """
     ensure_type(pr_obj, 'Presentation')
-    red, green, blue = itemgetter('R', 'G', 'B')(pr_obj.attrib)
-    return rgb_to_hex_string(*compute_rgb(float(red), float(green), float(blue)))
+    red, green, blue = map(float, itemgetter('R', 'G', 'B')(pr_obj.attrib))
+    return rgb_to_hex_string(*compute_rgb(red, green, blue))
