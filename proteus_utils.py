@@ -1,4 +1,5 @@
 import xml.etree.ElementTree as XMLParse
+from operator import itemgetter
 
 
 def ensure_type(obj: XMLParse.Element, tag: str):
@@ -12,3 +13,16 @@ def ensure_type(obj: XMLParse.Element, tag: str):
         raise ValueError(f'xml.etree.ElementTree.Element expected {type(obj)} found')
     if obj.tag != tag:
         raise ValueError(f'wrong type: expected type {tag}, got type {obj.tag}')
+
+
+def get_model_dimensions_from_plant_model(obj: XMLParse.Element):
+    ensure_type(obj, 'PlantModel')
+    plant_extent = obj.find('Extent')
+    (min_x_str, min_y_str) = itemgetter('X', 'Y')(plant_extent.find('Min').attrib)
+    (max_x_str, max_y_str) = itemgetter('X', 'Y')(plant_extent.find('Max').attrib)
+    return map(int, (min_x_str, min_y_str, max_x_str, max_y_str))
+
+
+def should_process_child(node_type: str) -> bool:
+    return node_type in ['PlantModel', 'Drawing', 'Label', 'Nozzle', 'PipingNetworkSystem', 'PipeFlowArrow',
+                         'PipingNetworkSegment', 'Equipment', 'SignalLine']
