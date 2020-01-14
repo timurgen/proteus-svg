@@ -8,3 +8,5 @@ class Context:
     x_max: int
     y_min: int
     y_max: int
+    origin: str = None
+    units: str = "mm"
