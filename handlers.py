@@ -14,6 +14,7 @@ from proteus_utils import ensure_type
 from color_utils import fetch_color_from_presentation
 from model_context import Context
 from line_utils import fetch_line_type_from_presentation
+from svg_utils import describe_arc
 
 
 def resolve_node_handler(node_type: str) -> Callable:
@@ -22,6 +23,11 @@ def resolve_node_handler(node_type: str) -> Callable:
     :param node_type: string value of node type (simply tag name)
     :return: Callable handler object
     """
+    if node_type in ['PlantModel', 'PlantInformation', 'Extent', 'Presentation', 'Label', 'ShapeCatalogue', 'Position',
+                     'Nozzle', 'Scale', 'PersistentID', 'GenericAttributes', 'ConnectionPoints', 'PipingNetworkSystem',
+                     'PipeFlowArrow', 'PipingNetworkSegment', 'PipingComponent', 'SignalLine']:
+        return dummy_handler
+
     if 'Line' == node_type:
         return line_handler
     elif 'CenterLine' == node_type:
@@ -30,10 +36,14 @@ def resolve_node_handler(node_type: str) -> Callable:
         return text_handler
     elif 'Circle' == node_type:
         return circle_handler
+    elif 'Drawing' == node_type:
+        return drawing_handler
+    elif 'TrimmedCurve' == node_type:
+        return trimmed_curve_handler
     elif 'Equipment' == node_type:
-        return equipment_handler
-    return dummy_handler
-    # raise NotImplementedError(f'handler for {node_type} is not implemented yet')
+        # return equipment_handler
+        return dummy_handler
+    raise NotImplementedError(f'handler for {node_type} is not implemented yet')
 
 
 def line_handler(node: XMLParse.Element, ctx: Context) -> svgwrite.shapes.Line:
@@ -132,17 +142,17 @@ def text_handler(node: XMLParse.Element, ctx: Context) -> svgwrite.text.Text:
         svg_jst = 'middle'
 
     add_y = 0
-    if 'Top' in text_justification:
+    if 'Bottom' in text_justification:
         add_y = text_size
 
     text_pos_x, text_pos_y = itemgetter('X', 'Y')(node.find('Position').find('Location').attrib)
 
     text_obj = svgwrite.text.Text(text_arr[0], x=[float(text_pos_x)],
-                                  y=[ctx.y_max - float(text_pos_y) + text_size], style=style,
+                                  y=[ctx.y_max - float(text_pos_y) + text_size - add_y], style=style,
                                   text_anchor=svg_jst)
 
     for span in text_arr[1:]:
-        t_span = svgwrite.text.TSpan(span, x=[float(text_pos_x)], dy=[text_size], text_anchor=svg_jst)
+        t_span = svgwrite.text.TSpan(span, x=[float(text_pos_x)], dy=[text_size - add_y], text_anchor=svg_jst)
         text_obj.add(t_span)
 
     return text_obj
@@ -210,6 +220,35 @@ def equipment_handler(node: XMLParse.Element, ctx: Context) -> svgwrite.shapes.R
     """
     extent_rect = extent_handler(node.find('Extent'), ctx)
     return extent_rect
+
+
+def drawing_handler(node: XMLParse.Element, ctx: Context) -> svgwrite.container.Group:
+    return svgwrite.container.Group()
+
+
+def trimmed_curve_handler(node: XMLParse.Element, ctx: Context):
+    def process_circle(circle_node: XMLParse.Element):
+        ensure_type(circle_node, 'Circle')
+        _presentation_obj = circle_node.find('Presentation')
+        _radius = circle_node.attrib.get('Radius')
+        _x, _y = itemgetter('X', 'Y')(circle_node.find('Position').find('Location').attrib)
+        _stroke_color = fetch_color_from_presentation(_presentation_obj)
+        _stroke_width = float(_presentation_obj.attrib.get('LineWeight'))
+        return _x, _y, _radius, _stroke_color, _stroke_width
+
+    def process_ellipse(ellipse_node: XMLParse.Element):
+        raise NotImplementedError('handler for ellipse is not implemented yet')
+
+    x, y, radius, stroke_color, stroke_width = process_circle(node.find('Circle')) if node.find(
+        'Circle') else process_ellipse(node.find('Ellipse'))
+
+    start_angle, end_angle = map(float, itemgetter('StartAngle', 'EndAngle')(node.attrib))
+
+    d = describe_arc(float(x), float(ctx.y_max - float(y)), float(radius), start_angle, end_angle)
+    path = svgwrite.path.Path(d, stroke=stroke_color, fill='none', style=f'stroke-width:{stroke_width}')
+    path.translate(0, ctx.y_max)
+    path.scale(1, -1)
+    return path
 
 
 def dummy_handler(node: XMLParse.Element, ctx: Context) -> None:
