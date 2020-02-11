@@ -1,8 +1,8 @@
 from proteus_lib.proteus_utils import ensure_type
-import xml.etree.ElementTree as XMLParse
+import lxml.etree as xml
 
 
-def fetch_line_type_from_presentation(pr_obj: XMLParse.Element, fallback='Solid') -> list:
+def fetch_line_type_from_presentation(pr_obj: xml._Element, fallback='Solid') -> list:
     """
     function to fetch and convert Proteus line type to SVG stroke-dasharray
     One of the numbers or names from the following (Object Model document v2.2) :-
@@ -14,6 +14,7 @@ def fetch_line_type_from_presentation(pr_obj: XMLParse.Element, fallback='Solid'
     5 Short Dash
     6 Long Dash + Short Dash + Short Dash
     7 Dash + Short Dash
+    :param fallback: default line type
     :param pr_obj: Presentation object
     :return: list values for stroke-dasharray SVG property
     """
