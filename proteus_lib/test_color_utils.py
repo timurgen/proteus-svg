@@ -1,6 +1,6 @@
 from unittest import TestCase
 import xml.etree.ElementTree as XMLParse
-import color_utils
+from proteus_lib import color_utils
 
 
 class Test(TestCase):

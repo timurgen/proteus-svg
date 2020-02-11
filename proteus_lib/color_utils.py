@@ -5,7 +5,7 @@ from typing import Tuple
 import math
 import xml.etree.ElementTree as XMLParse
 from operator import itemgetter
-from proteus_utils import ensure_type
+from proteus_lib.proteus_utils import ensure_type
 
 
 def rgb_to_hex_string(red: int, green: int, blue: int) -> str:

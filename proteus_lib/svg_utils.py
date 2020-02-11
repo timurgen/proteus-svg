@@ -2,7 +2,7 @@ import svgwrite
 import math
 
 
-def get_default(out_file_name: str) -> svgwrite.Drawing:
+def get_default(out_file_name: str, debug=False) -> svgwrite.Drawing:
     """
     creates and return SVG drawing element with default properties
 
@@ -17,10 +17,11 @@ def get_default(out_file_name: str) -> svgwrite.Drawing:
      </defs>
     </svg>
 
+    :param debug: if svgwrite should be initialized in debug mode
     :param out_file_name: name of file where result will be stored
     :return: drawing object
     """
-    drawing = svgwrite.Drawing(out_file_name, debug=True)
+    drawing = svgwrite.Drawing(out_file_name, debug=debug)
 
     drawing.attribs['overflow'] = 'scroll'
     drawing.defs.add(svgwrite.container.Style())
@@ -38,7 +39,7 @@ def get_default(out_file_name: str) -> svgwrite.Drawing:
 def polar_to_cartesian(x, y, radius, angle_degrees):
     """
     Function to convert polar coordinates to cartesian
-    :param x:
+    :param x: x cood
     :param y:
     :param radius:
     :param angle_degrees:

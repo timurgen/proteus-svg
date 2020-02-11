@@ -5,16 +5,18 @@ a handler function must take 2 arguments
     * model context
 and return corresponding svgwrite object
 """
+import logging
 
-import xml.etree.ElementTree as XMLParse
 from operator import itemgetter
 from typing import Callable
 import svgwrite
-from proteus_utils import ensure_type
-from color_utils import fetch_color_from_presentation
-from model_context import Context
-from line_utils import fetch_line_type_from_presentation
-from svg_utils import describe_arc
+from lxml import etree as xml
+
+from proteus_lib.proteus_utils import ensure_type, should_process_child
+from proteus_lib.color_utils import fetch_color_from_presentation
+from proteus_lib.model_context import Context
+from proteus_lib.line_utils import fetch_line_type_from_presentation
+from proteus_lib.svg_utils import describe_arc
 
 
 def resolve_node_handler(node_type: str) -> Callable:
@@ -23,7 +25,7 @@ def resolve_node_handler(node_type: str) -> Callable:
     :param node_type: string value of node type (simply tag name)
     :return: Callable handler object
     """
-    if node_type in ['PlantModel', 'PlantInformation', 'Extent', 'Presentation', 'Label', 'ShapeCatalogue', 'Position',
+    if node_type in ['Connection','PlantModel', 'PlantInformation', 'Extent', 'Presentation', 'Label', 'ShapeCatalogue', 'Position',
                      'Nozzle', 'Scale', 'PersistentID', 'GenericAttributes', 'ConnectionPoints', 'PipingNetworkSystem',
                      'PipeFlowArrow', 'PipingNetworkSegment', 'PipingComponent', 'SignalLine']:
         return dummy_handler
@@ -46,7 +48,7 @@ def resolve_node_handler(node_type: str) -> Callable:
     raise NotImplementedError(f'handler for {node_type} is not implemented yet')
 
 
-def line_handler(node: XMLParse.Element, ctx: Context) -> svgwrite.shapes.Line:
+def line_handler(node: xml.Element, ctx: Context) -> svgwrite.shapes.Line:
     """
     handler to transform Proteus line object to SVG line object
     :param node: XML node with Proteus line definition
@@ -83,7 +85,7 @@ def line_handler(node: XMLParse.Element, ctx: Context) -> svgwrite.shapes.Line:
     return line
 
 
-def centerline_handler(node: XMLParse.Element, ctx: Context) -> svgwrite.path.Path:
+def centerline_handler(node: xml.Element, ctx: Context) -> svgwrite.path.Path:
     ensure_type(node, 'CenterLine')
 
     presentation_obj = node.find("Presentation")
@@ -113,7 +115,7 @@ def centerline_handler(node: XMLParse.Element, ctx: Context) -> svgwrite.path.Pa
     return path
 
 
-def text_handler(node: XMLParse.Element, ctx: Context) -> svgwrite.text.Text:
+def text_handler(node: xml.Element, ctx: Context) -> svgwrite.text.Text:
     """
     handler to transform Proteus Text object to SVG String object
     :param node: XML node with Proteus line definition
@@ -134,21 +136,31 @@ def text_handler(node: XMLParse.Element, ctx: Context) -> svgwrite.text.Text:
     if not text_justification:
         text_justification = 'LeftBottom'
 
-    if 'Left' in text_justification:
+    if text_justification.startswith('Left'):
         svg_jst = 'start'
-    elif 'Right' in text_justification:
+    elif text_justification.startswith('Right'):
         svg_jst = 'end'
-    elif 'Center' in text_justification:
+    elif text_justification.startswith('Center'):
         svg_jst = 'middle'
+    else:
+        raise ValueError(f'Unknown justification {text_justification}')
 
+    # fixme
     add_y = 0
-    if 'Bottom' in text_justification:
-        add_y = text_size
+    if text_justification.endswith('Top'):
+        add_y = 1
+    elif text_justification.endswith('Center'):
+        add_y = 1
+    elif text_justification.endswith('Bottom'):
+        add_y = 1
+    else:
+        raise ValueError(f'Unknown justification {text_justification}')
 
-    text_pos_x, text_pos_y = itemgetter('X', 'Y')(node.find('Position').find('Location').attrib)
+    text_pos_x, text_pos_y = map(lambda x: float(x) * ctx.units.value,
+                                 itemgetter('X', 'Y')(node.find('Position').find('Location').attrib))
 
-    text_obj = svgwrite.text.Text(text_arr[0], x=[float(text_pos_x)],
-                                  y=[ctx.y_max - float(text_pos_y) + text_size - add_y], style=style,
+    text_obj = svgwrite.text.Text(text_arr[0], x=[text_pos_x],
+                                  y=[ctx.y_max - text_pos_y + text_size - add_y], style=style,
                                   text_anchor=svg_jst)
 
     for span in text_arr[1:]:
@@ -158,7 +170,7 @@ def text_handler(node: XMLParse.Element, ctx: Context) -> svgwrite.text.Text:
     return text_obj
 
 
-def circle_handler(node: XMLParse.Element, ctx: Context) -> svgwrite.shapes.Circle:
+def circle_handler(node: xml.Element, ctx: Context) -> svgwrite.shapes.Circle:
     """
     handler to transform Proteus Circle object to SVG Circle object
     :param node: XML node with Proteus circle definition
@@ -186,7 +198,7 @@ def circle_handler(node: XMLParse.Element, ctx: Context) -> svgwrite.shapes.Circ
     return circle
 
 
-def extent_handler(node: XMLParse.Element, ctx: Context) -> svgwrite.shapes.Rect:
+def extent_handler(node: xml.Element, ctx: Context) -> svgwrite.shapes.Rect:
     """
     handler to transform Proteus Extent object to SVG Circle object
     :param node: XML node with Proteus extent definition
@@ -211,7 +223,7 @@ def extent_handler(node: XMLParse.Element, ctx: Context) -> svgwrite.shapes.Rect
                                 onmouseout='evt.target.setAttribute("fill", "none")')
 
 
-def equipment_handler(node: XMLParse.Element, ctx: Context) -> svgwrite.shapes.Rect:
+def equipment_handler(node: xml.Element, ctx: Context) -> svgwrite.shapes.Rect:
     """
     special case handler that process nothing and returns None
     :param node: node to process
@@ -222,12 +234,12 @@ def equipment_handler(node: XMLParse.Element, ctx: Context) -> svgwrite.shapes.R
     return extent_rect
 
 
-def drawing_handler(node: XMLParse.Element, ctx: Context) -> svgwrite.container.Group:
+def drawing_handler(node: xml.Element, ctx: Context) -> svgwrite.container.Group:
     return svgwrite.container.Group()
 
 
-def trimmed_curve_handler(node: XMLParse.Element, ctx: Context):
-    def process_circle(circle_node: XMLParse.Element):
+def trimmed_curve_handler(node: xml.Element, ctx: Context):
+    def process_circle(circle_node: xml.Element):
         ensure_type(circle_node, 'Circle')
         _presentation_obj = circle_node.find('Presentation')
         _radius = circle_node.attrib.get('Radius')
@@ -236,7 +248,7 @@ def trimmed_curve_handler(node: XMLParse.Element, ctx: Context):
         _stroke_width = float(_presentation_obj.attrib.get('LineWeight'))
         return _x, _y, _radius, _stroke_color, _stroke_width
 
-    def process_ellipse(ellipse_node: XMLParse.Element):
+    def process_ellipse(ellipse_node: xml.Element):
         raise NotImplementedError('handler for ellipse is not implemented yet')
 
     x, y, radius, stroke_color, stroke_width = process_circle(node.find('Circle')) if node.find(
@@ -251,7 +263,7 @@ def trimmed_curve_handler(node: XMLParse.Element, ctx: Context):
     return path
 
 
-def dummy_handler(node: XMLParse.Element, ctx: Context) -> None:
+def dummy_handler(node: xml.Element, ctx: Context) -> None:
     """
     special case handler that process nothing and returns None
     :param node: node to process
@@ -259,3 +271,21 @@ def dummy_handler(node: XMLParse.Element, ctx: Context) -> None:
     :return: always None
     """
     return None
+
+
+def process_node(node: xml.Element, target: svgwrite.base.BaseElement, model_ctx: Context):
+    node_type = node.tag
+    logging.debug(f'processing {node_type} node')
+
+    node_handler = resolve_node_handler(node_type)
+    result = node_handler(node, model_ctx)
+
+    if result:
+        target.add(result)
+        if model_ctx.debug:
+            extent_obj = node.find('Extent')
+            extent_rect = extent_handler(extent_obj, model_ctx)
+            target.add(extent_rect)
+    if should_process_child(node.tag):
+        for child in list(node):
+            process_node(child, result if result else target, model_ctx)
