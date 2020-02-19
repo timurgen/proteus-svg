@@ -1,8 +1,11 @@
 import svgwrite
 import math
 
+from proteus_lib.color_utils import fetch_color_from_presentation
+from proteus_lib.model_context import Context
 
-def get_default(out_file_name: str, debug=False) -> svgwrite.Drawing:
+
+def get_default(out_file_name, size, view_box, debug=False) -> svgwrite.Drawing:
     """
     creates and return SVG drawing element with default properties
 
@@ -17,22 +20,14 @@ def get_default(out_file_name: str, debug=False) -> svgwrite.Drawing:
      </defs>
     </svg>
 
+    :param view_box:
+    :param size:
     :param debug: if svgwrite should be initialized in debug mode
     :param out_file_name: name of file where result will be stored
     :return: drawing object
     """
-    drawing = svgwrite.Drawing(out_file_name, debug=debug)
-
-    drawing.attribs['overflow'] = 'scroll'
-    drawing.defs.add(svgwrite.container.Style())
-
-    default_filter = svgwrite.filters.Filter(('-40%', '-40%'), ('200%', '200%'), id='glow')
-
-    default_filter.feOffset(in_='SourceGraphic', dx=0, dy=0, result='offOut')
-    default_filter.feGaussianBlur(in_='offOut', result='blurOut', stdDeviation=2)
-    default_filter.feBlend(in_='SourceGraphic', in2='blurOut', mode='normal')
-
-    drawing.defs.add(default_filter)
+    drawing = svgwrite.Drawing(out_file_name, debug=debug, size=size)
+    drawing.viewbox(*view_box)
     return drawing
 
 
@@ -89,3 +84,16 @@ def add_grid(obj: svgwrite.Drawing, s=10):
 
     rect_grid = obj.rect(size=('100%', '100%'), fill="url(#grid)")
     obj.add(rect_grid)
+
+
+def set_bg_color(obj: svgwrite.Drawing, plant_model, ctx: Context):
+    """
+    function to set background color for SVG drawing
+    :param obj: drawing t oset color on
+    :param plant_model: PlantModel proteus object
+    :param ctx: model context
+    :return: None
+    """
+    bg_color = fetch_color_from_presentation(plant_model.find('Drawing').find('Presentation'))
+    bg_color_rect = obj.rect((0, 0), ('100%', '100%'), fill=bg_color)
+    obj.add(bg_color_rect)
