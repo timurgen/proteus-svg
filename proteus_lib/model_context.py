@@ -31,5 +31,6 @@ class Context:
         :return: xml._Element if found or None otherwise
         """
         if self.shape_catalog is not None:
+            # todo probably deep copy should be used if there may be more than one reference to an object in catalog
             return self.shape_catalog.find(f'.//{node_type}[@ComponentName="{component_name}"]')
         return None
