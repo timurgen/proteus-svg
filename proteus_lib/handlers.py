@@ -36,11 +36,11 @@ def resolve_node_handler(node_type: str) -> Callable:
     :return: Callable handler object
     """
     if node_type in ['Association', 'Connection', 'PlantModel', 'PlantInformation', 'PlantStructureItem', 'Extent',
-                     'Presentation', 'Label', 'ActuatingSystem', 'ActuatingSystemComponent', 'ActuatingFunction',
-                     'ShapeCatalogue', 'Position', 'DrawingBorder',
+                     'Presentation', 'ActuatingSystem', 'ActuatingSystemComponent', 'ActuatingFunction',
+                     'ShapeCatalogue', 'Position', 'DrawingBorder', 'PropertyBreak',
                      'Scale', 'PersistentID', 'GenericAttributes', 'ConnectionPoints', 'PipingNetworkSystem',
                      'PipeFlowArrow', 'PipingNetworkSegment', 'SignalLine', 'InformationFlow',
-                     'InstrumentationLoopFunction', 'NominalDiameter']:
+                     'InstrumentationLoopFunction', 'NominalDiameter', 'PipeConnectorSymbol', 'CrossPageConnection']:
         return dummy_handler
 
     if 'Line' == node_type:
@@ -65,6 +65,8 @@ def resolve_node_handler(node_type: str) -> Callable:
         return nozzle_handler
     elif 'PipingComponent' == node_type:
         return piping_component_handler
+    elif 'Label' == node_type:
+        return label_handler
     elif 'ProcessInstrumentationFunction' == node_type:
         return process_instrumentation_function_handler
     raise NotImplementedError(f'handler for {node_type} is not implemented yet')
@@ -250,7 +252,9 @@ def text_handler(node: xml.Element, ctx: Context) -> svgwrite.text.Text:
     text_font = node.attrib.get('Font')
     text_size = round(float(node.attrib.get('Height')) * ctx.units.value)
     text_color = fetch_color_from_presentation(node.find('Presentation'))
-    style = f'font-size:{text_size * ctx.units.value}px; font-family:{text_font}; fill:{text_color}'
+    style = f'font-size:{text_size}px; font-family:{text_font}; fill:{text_color}'
+
+    text_angle = float(node.attrib.get('TextAngle')) if node.attrib.get('TextAngle') is not None else 0
 
     text_justification = node.attrib.get('Justification')
     if not text_justification:
@@ -280,6 +284,7 @@ def text_handler(node: xml.Element, ctx: Context) -> svgwrite.text.Text:
     text_obj = svgwrite.text.Text(text_arr[0], x=[text_pos_x],
                                   y=[ctx.y_max - text_pos_y - text_size / 2], style=style,
                                   text_anchor=svg_jst, alignment_baseline=alignment_baseline)
+    text_obj.rotate(-text_angle, (text_pos_x, -(text_pos_y - ctx.y_max)))
 
     for span in text_arr[1:]:
         t_span = svgwrite.text.TSpan(span, x=[float(text_pos_x)], dy=[text_size], text_anchor=svg_jst,
@@ -357,6 +362,7 @@ def equipment_handler(node: xml._Element, ctx: Context) -> svgwrite.container.Gr
     eq_group.attribs[DATA_FULL_LABEL] = get_gen_attr_val(node, 'ComosProperties', 'FullLabel')
 
     shape_reference = ctx.get_from_shape_catalog('Equipment', eq_group.attribs[DATA_COMPONENT_NAME])
+
     if shape_reference is not None:
         pos_x, pos_y = map(lambda x: float(x) * ctx.units.value,
                            itemgetter('X', 'Y')(node.find('Position').find('Location').attrib))
@@ -366,7 +372,6 @@ def equipment_handler(node: xml._Element, ctx: Context) -> svgwrite.container.Gr
                                         itemgetter('X', 'Y', 'Z')(node.find('Scale').attrib)) if node.find(
             'Scale') is not None else (1, 1, 1)
         idx = 1
-        eq_group.scale(scale_x, scale_y)
         for item in shape_reference:
             if item.tag in ['Presentation', 'Extent', 'Position', 'GenericAttributes']:
                 continue
@@ -426,11 +431,7 @@ def nozzle_handler(node: xml._Element, ctx: Context) -> svgwrite.container.Group
 
 def drawing_handler(node: xml.Element, ctx: Context) -> svgwrite.container.Group:
     ensure_type(node, 'Drawing')
-    color = fetch_color_from_presentation(node.find('Presentation'))
-    rect = ctx.drawing.rect((ctx.x_min, ctx.y_max - ctx.y_min), ('100%', '100%'), fill=color)
-    g = ctx.drawing.g()
-    # g.add(rect)
-    return g
+    return create_group(ctx, node, 'Drawing')
 
 
 def trimmed_curve_handler(node: xml.Element, ctx: Context):
@@ -461,7 +462,7 @@ def trimmed_curve_handler(node: xml.Element, ctx: Context):
 
 def piping_component_handler(node: xml._Element, ctx: Context):
     ensure_type(node, 'PipingComponent')
-
+    pipe_comp_group = create_group(ctx, node, 'PipingComponent')
     shape_reference = ctx.get_from_shape_catalog('PipingComponent', node.attrib.get('ComponentName'))
     if shape_reference is not None:
         pos_x, pos_y = map(lambda x: float(x) * ctx.units.value,
@@ -479,7 +480,18 @@ def piping_component_handler(node: xml._Element, ctx: Context):
             node.insert(idx, item)
             idx += 1
 
-    return create_group(ctx, node, 'PipingComponent')
+        # fixme refactor me to more reliable solution afterwhile
+        if ref_x == -1:
+            pipe_comp_group.scale(-1, 1)
+            pipe_comp_group.attribs['transform-origin'] = f'{pos_x} {-(pos_y - ctx.y_max)}'
+        elif ref_y == 1:
+            pipe_comp_group.rotate(-90)
+            pipe_comp_group.attribs['transform-origin'] = f'{pos_x} {-(pos_y - ctx.y_max)}'
+        elif ref_y == -1:
+            pipe_comp_group.rotate(90)
+            pipe_comp_group.attribs['transform-origin'] = f'{pos_x} {-(pos_y - ctx.y_max)}'
+
+    return pipe_comp_group
 
 
 def process_instrumentation_function_handler(node: xml._Element, ctx: Context):
@@ -503,6 +515,11 @@ def process_instrumentation_function_handler(node: xml._Element, ctx: Context):
             idx += 1
 
     return create_group(ctx, node, 'ProcessInstrumentationFunction')
+
+
+def label_handler(node: xml._Element, ctx: Context) -> svgwrite.container.Group:
+    ensure_type(node, 'Label')
+    return create_group(ctx, node, 'Label')
 
 
 def dummy_handler(node: xml.Element, ctx: Context) -> None:
@@ -542,10 +559,19 @@ def create_group(ctx, node, data_type):
     :return:
     """
     pipe_comp_group = ctx.drawing.g()
-    pipe_comp_group.attribs['ID'] = node.attrib.get('ID')
+
     pipe_comp_group.attribs[DATA_TYPE] = data_type
-    pipe_comp_group.attribs[DATA_COMPONENT_CLASS] = node.attrib.get('ComponentClass')
-    pipe_comp_group.attribs[DATA_COMPONENT_NAME] = node.attrib.get('ComponentName')
-    if node.attrib.get('TagName'):
+
+    if node.attrib.get('ID') is not None:
+        pipe_comp_group.attribs['ID'] = node.attrib.get('ID')
+
+    if node.attrib.get('ComponentClass') is not None:
+        pipe_comp_group.attribs[DATA_COMPONENT_CLASS] = node.attrib.get('ComponentClass')
+
+    if node.attrib.get('ComponentName') is not None:
+        pipe_comp_group.attribs[DATA_COMPONENT_NAME] = node.attrib.get('ComponentName')
+
+    if node.attrib.get('TagName') is not None:
         pipe_comp_group.attribs[DATA_TAG_NAME] = node.attrib.get('TagName')
+
     return pipe_comp_group
