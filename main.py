@@ -6,7 +6,7 @@ import lxml.etree as xml
 from flask import Flask, request, abort, Response
 
 from proteus_lib.model_context import Context, Unit
-from proteus_lib.svg_utils import get_default, add_grid
+from proteus_lib.svg_utils import get_default, add_grid, set_bg_color
 from proteus_lib.handlers import process_node
 from proteus_lib.proteus_utils import get_model_dimensions_from_plant_model
 
@@ -25,26 +25,28 @@ def process_file():
 
     for file in request.files:
         input_file = xml.parse(request.files[file], PARSER)
-        drawing = get_default(f'{file}.svg')
 
         plant_model = input_file.getroot()
         if plant_model.tag != ROOT_ELEMENT:
             abort(400, f'malformed file {file}, {ROOT_ELEMENT} expected at root level')
 
-        (x_min, y_min, x_max, y_max) = get_model_dimensions_from_plant_model(plant_model)
-
         pl_info = plant_model.find('PlantInformation')
         m_unit = Unit[pl_info.attrib['Units']]
 
+        # proteus coordinates
+        x_min, y_min, x_max, y_max = map(lambda x: x * m_unit.value, get_model_dimensions_from_plant_model(plant_model))
+
+        drawing = get_default(f'{file}.svg', size=(x_max, y_max),
+                              view_box=(0, 0, x_max, y_max))
         model_context = Context(drawing=drawing,
-                                x_min=x_min * m_unit.value, x_max=x_max * m_unit.value,
-                                y_min=y_min * m_unit.value, y_max=y_max * m_unit.value,
+                                x_min=x_min, x_max=x_max,
+                                y_min=y_min, y_max=y_max,
                                 debug=debug,
                                 origin=pl_info.attrib['OriginatingSystem'],
-                                units=m_unit)
+                                units=m_unit,
+                                shape_catalog=plant_model.find('ShapeCatalogue'))
 
-        drawing.attribs['width'] = model_context.x_max
-        drawing.attribs['height'] = model_context.y_max
+        set_bg_color(drawing, plant_model, model_context)
 
         if grid is not None:
             add_grid(drawing, int(grid) if grid.isnumeric() else 10)
