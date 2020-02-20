@@ -26,6 +26,8 @@ DATA_LABEL = 'data-label'
 DATA_FULL_LABEL = 'data-full-label'
 DATA_TAG_NAME = 'data-tag-name'
 
+LINEBREAK_PATTERN = "\r\n|\r|\n|&#xD;&#xA;|&#xD;|&#xA;"
+
 
 def resolve_node_handler(node_type: str) -> Callable:
     """
@@ -38,13 +40,17 @@ def resolve_node_handler(node_type: str) -> Callable:
                      'ShapeCatalogue', 'Position', 'DrawingBorder',
                      'Scale', 'PersistentID', 'GenericAttributes', 'ConnectionPoints', 'PipingNetworkSystem',
                      'PipeFlowArrow', 'PipingNetworkSegment', 'SignalLine', 'InformationFlow',
-                     'InstrumentationLoopFunction']:
+                     'InstrumentationLoopFunction', 'NominalDiameter']:
         return dummy_handler
 
     if 'Line' == node_type:
         return line_handler
     elif 'CenterLine' == node_type:
         return centerline_handler
+    elif 'PolyLine' == node_type:
+        return polyline_handler
+    elif 'Shape' == node_type:
+        return shape_handler
     elif 'Text' == node_type:
         return text_handler
     elif 'Circle' == node_type:
@@ -103,17 +109,29 @@ def line_handler(node: xml.Element, ctx: Context) -> svgwrite.shapes.Line:
 
 
 def centerline_handler(node: xml.Element, ctx: Context) -> svgwrite.path.Path:
+    """
+    handler to transform Proteus CenterLine geometric curve primitive to SVG path object
+    :param node: XML node with Proteus CenterLine definition
+    :param ctx: drawing context
+    :return: XML object with SVG path definition
+    """
     ensure_type(node, 'CenterLine')
 
     presentation_obj = node.find("Presentation")
-    if presentation_obj is None:
-        raise AssertionError(f'"Presentation" node expected but not found in Line node')
 
-    stroke_color = fetch_color_from_presentation(presentation_obj)
-    stroke_width = float(presentation_obj.attrib.get('LineWeight')) * ctx.units.value
+    # as of P&ID profile file specification - The drawing behaviour is undefined if the Presentation element is missing.
+    if presentation_obj is None:
+        parent_presentation_obj = node.getparent().find('Presentation')
+        stroke_color = fetch_color_from_presentation(parent_presentation_obj)
+        stroke_width = float(parent_presentation_obj.attrib.get('LineWeight')) * ctx.units.value
+    else:
+        stroke_color = fetch_color_from_presentation(presentation_obj)
+        stroke_width = float(presentation_obj.attrib.get('LineWeight')) * ctx.units.value
 
     coordinates = node.findall('Coordinate')
+
     is_filled = True if node.attrib.get('Filled') else False
+
     path = svgwrite.path.Path(None, stroke=stroke_color,
                               fill='none' if not is_filled else stroke_color,
                               style=f'stroke-width:{stroke_width}')
@@ -132,6 +150,90 @@ def centerline_handler(node: xml.Element, ctx: Context) -> svgwrite.path.Path:
     return path
 
 
+def polyline_handler(node: xml.Element, ctx: Context) -> svgwrite.path.Path:
+    """
+    handler to transform Proteus PolyLine geometric curve primitive to SVG path object
+    :param node: XML node with Proteus CenterLine definition
+    :param ctx: drawing context
+    :return: XML object with SVG path definition
+    """
+    ensure_type(node, 'PolyLine')
+
+    presentation_obj = node.find("Presentation")
+
+    # as of P&ID profile file specification - The drawing behaviour is undefined if the Presentation element is missing.
+    if presentation_obj is None:
+        parent_presentation_obj = node.getparent().find('Presentation')
+        stroke_color = fetch_color_from_presentation(parent_presentation_obj)
+        stroke_width = float(parent_presentation_obj.attrib.get('LineWeight')) * ctx.units.value
+    else:
+        stroke_color = fetch_color_from_presentation(presentation_obj)
+        stroke_width = float(presentation_obj.attrib.get('LineWeight')) * ctx.units.value
+
+    coordinates = node.findall('Coordinate')
+
+    is_filled = True if node.attrib.get('Filled') else False
+
+    path = svgwrite.path.Path(None, stroke=stroke_color,
+                              fill='none' if not is_filled else stroke_color,
+                              style=f'stroke-width:{stroke_width}')
+
+    start_point = True
+    for coordinate in coordinates:
+        operation = 'M' if start_point else 'L'
+        start_point = False
+        x_, y_ = map(lambda x: float(x) * ctx.units.value, itemgetter('X', 'Y')(coordinate.attrib))
+        path.push(operation, x_, ctx.y_max - y_)
+
+    line_type = fetch_line_type_from_presentation(presentation_obj)
+    if line_type:
+        path.dasharray(line_type)
+
+    return path
+
+
+def shape_handler(node: xml.Element, ctx: Context) -> svgwrite.path.Path:
+    """
+    handler to transform Proteus PolyLine geometric curve primitive to SVG path object
+    :param node: XML node with Proteus CenterLine definition
+    :param ctx: drawing context
+    :return: XML object with SVG path definition
+    """
+    ensure_type(node, 'Shape')
+
+    presentation_obj = node.find("Presentation")
+
+    # as of P&ID profile file specification - The drawing behaviour is undefined if the Presentation element is missing.
+    if presentation_obj is None:
+        parent_presentation_obj = node.getparent().find('Presentation')
+        stroke_color = fetch_color_from_presentation(parent_presentation_obj)
+        stroke_width = float(parent_presentation_obj.attrib.get('LineWeight')) * ctx.units.value
+    else:
+        stroke_color = fetch_color_from_presentation(presentation_obj)
+        stroke_width = float(presentation_obj.attrib.get('LineWeight')) * ctx.units.value
+
+    coordinates = node.findall('Coordinate')
+
+    is_filled = True if node.attrib.get('Filled') else False
+
+    path = svgwrite.path.Path(None, stroke=stroke_color,
+                              fill='none' if not is_filled else stroke_color,
+                              style=f'stroke-width:{stroke_width}')
+
+    start_point = True
+    for coordinate in coordinates:
+        operation = 'M' if start_point else 'L'
+        start_point = False
+        x_, y_ = map(lambda x: float(x) * ctx.units.value, itemgetter('X', 'Y')(coordinate.attrib))
+        path.push(operation, x_, ctx.y_max - y_)
+
+    line_type = fetch_line_type_from_presentation(presentation_obj)
+    if line_type:
+        path.dasharray(line_type)
+
+    return path.push('Z')
+
+
 def text_handler(node: xml.Element, ctx: Context) -> svgwrite.text.Text:
     """
     handler to transform Proteus Text object to SVG String object
@@ -142,7 +244,7 @@ def text_handler(node: xml.Element, ctx: Context) -> svgwrite.text.Text:
     ensure_type(node, 'Text')
 
     if node.attrib.get('String'):
-        text_arr = re.split("\r\n|\r|\n|&#xD;&#xA;|&#xD;|&#xA;", node.attrib.get('String'))
+        text_arr = re.split(LINEBREAK_PATTERN, node.attrib.get('String'))
     else:
         return
     text_font = node.attrib.get('Font')
@@ -254,17 +356,18 @@ def equipment_handler(node: xml._Element, ctx: Context) -> svgwrite.container.Gr
     eq_group.attribs[DATA_LABEL] = get_gen_attr_val(node, 'ComosProperties', 'Label')
     eq_group.attribs[DATA_FULL_LABEL] = get_gen_attr_val(node, 'ComosProperties', 'FullLabel')
 
-    if ctx.get_from_shape_catalog('Equipment', eq_group.attribs[DATA_COMPONENT_NAME]):
+    shape_reference = ctx.get_from_shape_catalog('Equipment', eq_group.attribs[DATA_COMPONENT_NAME])
+    if shape_reference is not None:
         pos_x, pos_y = map(lambda x: float(x) * ctx.units.value,
                            itemgetter('X', 'Y')(node.find('Position').find('Location').attrib))
         ref_x, ref_y = map(lambda x: float(x) * ctx.units.value,
                            itemgetter('X', 'Y')(node.find('Position').find('Reference').attrib))
         scale_x, scale_y, scale_z = map(lambda x: float(x) * ctx.units.value,
                                         itemgetter('X', 'Y', 'Z')(node.find('Scale').attrib)) if node.find(
-            'Scale') else (1, 1, 1)
-        equip_model = ctx.shape_catalog.find(f'.//Equipment[@ComponentName="{eq_group.attribs[DATA_COMPONENT_NAME]}"]')
+            'Scale') is not None else (1, 1, 1)
         idx = 1
-        for item in equip_model:
+        eq_group.scale(scale_x, scale_y)
+        for item in shape_reference:
             if item.tag in ['Presentation', 'Extent', 'Position', 'GenericAttributes']:
                 continue
             set_scale_angle_pos(item, (pos_x, pos_y), (ref_x, ref_y), (scale_x, scale_y, scale_z))
@@ -289,25 +392,35 @@ def nozzle_handler(node: xml._Element, ctx: Context) -> svgwrite.container.Group
     ref_x, ref_y = map(lambda x: float(x) * ctx.units.value,
                        itemgetter('X', 'Y')(node.find('Position').find('Reference').attrib))
     scale_x, scale_y, scale_z = map(lambda x: float(x) * ctx.units.value,
-                                    itemgetter('X', 'Y', 'Z')(node.find('Scale').attrib)) if node.find('Scale') else (
-        1, 1, 1)
+                                    itemgetter('X', 'Y', 'Z')(node.find('Scale').attrib)) if node.find(
+        'Scale') is not None else (1, 1, 1)
 
-    if ctx.get_from_shape_catalog('Nozzle', eq_group.attribs[DATA_COMPONENT_NAME]):
+    shape_reference = ctx.get_from_shape_catalog('Nozzle', eq_group.attribs[DATA_COMPONENT_NAME])
+    if shape_reference is not None:
         pos_x, pos_y = map(lambda x: float(x) * ctx.units.value,
                            itemgetter('X', 'Y')(node.find('Position').find('Location').attrib))
         ref_x, ref_y = map(lambda x: float(x) * ctx.units.value,
                            itemgetter('X', 'Y')(node.find('Position').find('Reference').attrib))
         scale_x, scale_y, scale_z = map(lambda x: float(x) * ctx.units.value,
                                         itemgetter('X', 'Y', 'Z')(node.find('Scale').attrib)) if node.find(
-            'Scale') else (1, 1, 1)
-        equip_model = ctx.shape_catalog.find(f'.//Nozzle[@ComponentName="{eq_group.attribs[DATA_COMPONENT_NAME]}"]')
+            'Scale') is not None else (1, 1, 1)
         idx = 1
-        for item in equip_model:
+        for item in shape_reference:
             if item.tag in ['Presentation', 'Extent', 'Position', 'GenericAttributes']:
                 continue
             set_scale_angle_pos(item, (pos_x, pos_y), (ref_x, ref_y), (scale_x, scale_y, scale_z))
             node.insert(idx, item)
             idx += 1
+        # fixme refactor me to more reliable solution afterwhile
+        if ref_x == -1:
+            eq_group.scale(-1, 1)
+            eq_group.attribs['transform-origin'] = f'{pos_x} {-(pos_y - ctx.y_max)}'
+        elif ref_y == 1:
+            eq_group.rotate(-90)
+            eq_group.attribs['transform-origin'] = f'{pos_x} {-(pos_y - ctx.y_max)}'
+        elif ref_y == -1:
+            eq_group.rotate(90)
+            eq_group.attribs['transform-origin'] = f'{pos_x} {-(pos_y - ctx.y_max)}'
     return eq_group
 
 
@@ -335,7 +448,7 @@ def trimmed_curve_handler(node: xml.Element, ctx: Context):
         raise NotImplementedError('handler for ellipse is not implemented yet')
 
     x, y, radius, stroke_color, stroke_width = process_circle(node.find('Circle')) if node.find(
-        'Circle') else process_ellipse(node.find('Ellipse'))
+        'Circle') is not None else process_ellipse(node.find('Ellipse'))
 
     start_angle, end_angle = map(float, itemgetter('StartAngle', 'EndAngle')(node.attrib))
 
@@ -348,11 +461,47 @@ def trimmed_curve_handler(node: xml.Element, ctx: Context):
 
 def piping_component_handler(node: xml._Element, ctx: Context):
     ensure_type(node, 'PipingComponent')
+
+    shape_reference = ctx.get_from_shape_catalog('PipingComponent', node.attrib.get('ComponentName'))
+    if shape_reference is not None:
+        pos_x, pos_y = map(lambda x: float(x) * ctx.units.value,
+                           itemgetter('X', 'Y')(node.find('Position').find('Location').attrib))
+        ref_x, ref_y = map(lambda x: float(x) * ctx.units.value,
+                           itemgetter('X', 'Y')(node.find('Position').find('Reference').attrib))
+        scale_x, scale_y, scale_z = map(lambda x: float(x) * ctx.units.value,
+                                        itemgetter('X', 'Y', 'Z')(node.find('Scale').attrib)) if node.find(
+            'Scale') is not None else (1, 1, 1)
+        idx = 1
+        for item in shape_reference:
+            if item.tag in ['Presentation', 'Extent', 'Position', 'GenericAttributes']:
+                continue
+            set_scale_angle_pos(item, (pos_x, pos_y), (ref_x, ref_y), (scale_x, scale_y, scale_z))
+            node.insert(idx, item)
+            idx += 1
+
     return create_group(ctx, node, 'PipingComponent')
 
 
 def process_instrumentation_function_handler(node: xml._Element, ctx: Context):
     ensure_type(node, 'ProcessInstrumentationFunction')
+
+    shape_reference = ctx.get_from_shape_catalog('ProcessInstrumentationFunction', node.attrib.get('ComponentName'))
+    if shape_reference is not None:
+        pos_x, pos_y = map(lambda x: float(x) * ctx.units.value,
+                           itemgetter('X', 'Y')(node.find('Position').find('Location').attrib))
+        ref_x, ref_y = map(lambda x: float(x) * ctx.units.value,
+                           itemgetter('X', 'Y')(node.find('Position').find('Reference').attrib))
+        scale_x, scale_y, scale_z = map(lambda x: float(x) * ctx.units.value,
+                                        itemgetter('X', 'Y', 'Z')(node.find('Scale').attrib)) if node.find(
+            'Scale') is not None else (1, 1, 1)
+        idx = 1
+        for item in shape_reference:
+            if item.tag in ['Presentation', 'Extent', 'Position', 'GenericAttributes']:
+                continue
+            set_scale_angle_pos(item, (pos_x, pos_y), (ref_x, ref_y), (scale_x, scale_y, scale_z))
+            node.insert(idx, item)
+            idx += 1
+
     return create_group(ctx, node, 'ProcessInstrumentationFunction')
 
 
