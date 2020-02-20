@@ -1,10 +1,11 @@
 import lxml.etree as xml
 from operator import itemgetter
+import numpy as np
 
 COMPLEX_NODES = ['PlantModel', 'Drawing', 'Label', 'Nozzle', 'PipingNetworkSystem', 'PipeFlowArrow',
                  'PipingNetworkSegment', 'PipingComponent', 'Equipment', 'SignalLine', 'ActuatingSystem',
                  'ActuatingSystemComponent', 'InformationFlow',
-                 'ProcessInstrumentationFunction']
+                 'ProcessInstrumentationFunction', 'PipeConnectorSymbol']
 
 
 def ensure_type(obj: xml.Element, tag: str):
@@ -60,14 +61,30 @@ def set_scale_angle_pos(item, pos_t, ref_t, scale_t):
     :param scale_t: scale tuple (x,y,z)
     :return:
     """
+
+    scale_m = np.array([[scale_t[0], 0], [0, scale_t[1]]])
+
     if item.find('Position') is not None:
         loc = item.find('Position').find('Location')
+        point_m = np.array([float(loc.attrib['X']), float(loc.attrib['Y'])])
+        new_coords = scale_m.dot(point_m)
         loc.attrib['X'] = str(pos_t[0] + float(loc.attrib['X']))
         loc.attrib['Y'] = str(pos_t[1] + float(loc.attrib['Y']))
 
+        # loc.attrib['X'] = str(new_coords[0] + float(loc.attrib['X']))
+        # loc.attrib['Y'] = str(new_coords[1] + float(loc.attrib['Y']))
+
     for coordinate in item.findall('Coordinate'):
-        coordinate.attrib['X'] = str(pos_t[0] + float(coordinate.attrib['X']))
-        coordinate.attrib['Y'] = str(pos_t[1] + float(coordinate.attrib['Y']))
+        point_m = np.array([float(coordinate.attrib['X']), float(coordinate.attrib['Y'])])
+        new_coords = scale_m.dot(point_m)
+        if ref_t[1] == 1:  # 90 anticlockwise around Y
+            theta = np.radians(90)
+            c, s = np.cos(theta), np.sin(theta)
+            r_m = np.array(((c, -s), (s, c)))
+            r_cords = r_m.dot(new_coords)
+            new_coords = r_cords
+        coordinate.attrib['X'] = str(pos_t[0] + new_coords[0])
+        coordinate.attrib['Y'] = str(pos_t[1] + new_coords[1])
 
     # todo rotation angle
     cos_phi = ref_t[0]
@@ -75,6 +92,7 @@ def set_scale_angle_pos(item, pos_t, ref_t, scale_t):
 
     if abs(1 - (cos_phi ** 2 + sin_phi ** 2)) > 0.0001:
         raise ValueError("Reference x**2 + y**2 must be equal to 1")
+
     # todo scaling
 
     for child in item:
