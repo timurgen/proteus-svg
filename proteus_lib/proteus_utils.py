@@ -93,16 +93,12 @@ def set_scale_angle_pos(item, pos_t, ref_t, scale_t):
     scale_m = np.array([[scale_t[0], 0], [0, scale_t[1]]])
 
     # rotating
-    if ref_t[0] == 1:
-        theta = np.radians(0)
-    if ref_t[1] == 1:  # 90 anticlockwise around Y
-        theta = np.radians(90)
-    if ref_t[0] == -1:  # flip around x
-        theta = np.radians(-180)
-    if ref_t[1] == -1:  # flip around y
-        theta = np.radians(270)
-
-    c, s = np.cos(theta), np.sin(theta)
+    # The Reference is defined by the cosine and sine of the rotation angle. The x-value contains the cosine,
+    # the y-value the sine of the rotation angle, with the rotation being measured anti-clockwise. In consequence
+    # x^2 + y^2 = 1 must be fullfilled in order for the values to be correct.
+    if abs(1 - (ref_t[0]**2 + ref_t[1]**2)) > 0.0001:
+        raise AssertionError("x^2 + y^2 = 1 must be full-filled in order for the reference values to be correct.")
+    c, s = float(ref_t[0]), float(ref_t[1])
     rotation_m = np.array(((c, -s), (s, c)))
 
     def apply_transformation_to_coordinates_2d(obj_to_apply):
