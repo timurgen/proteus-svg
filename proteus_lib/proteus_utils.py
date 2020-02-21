@@ -21,9 +21,18 @@ def ensure_type(obj: xml.Element, tag: str):
         raise ValueError(f'wrong type: expected type {tag}, got type {obj.tag}')
 
 
-def get_model_dimensions_from_plant_model(obj: xml.Element):
+def get_model_dimensions_from_plant_model(obj: xml._Element):
+    """
+    function to get drawing dimensions from PlantModel object
+    :param obj:
+    :return:
+    """
     ensure_type(obj, 'PlantModel')
+
     plant_extent = obj.find('Extent')
+    if plant_extent is None:
+        raise AssertionError('Extent must be presented in PlantModel')
+
     (min_x_str, min_y_str) = itemgetter('X', 'Y')(plant_extent.find('Min').attrib)
     (max_x_str, max_y_str) = itemgetter('X', 'Y')(plant_extent.find('Max').attrib)
     return map(float, (min_x_str, min_y_str, max_x_str, max_y_str))
@@ -54,56 +63,119 @@ def should_process_child(node_type: str) -> bool:
 
 def set_scale_angle_pos(item, pos_t, ref_t, scale_t):
     """
-    recursive function to set position, rotation angle and scale of model taken from ShapeCatalogue
-    :param item: object model
+    recursive function to set position, rotation angle and scale of model elements taken from ShapeCatalogue
+    # fixme provide support for all required types which are:
+        Equipment +
+        PipingComponent +
+        Nozzle +
+        ProcessInstrument
+        InstrumentComponent
+        Component
+        PipeConnector
+        SignalConnectorSymbol
+        InsulationSymbol
+        PropertyBreak
+        Label
+        PipeFlowArrow
+    # todo support unit conversion with respect to Units attribute of ShapeCatalogue
+    :param item: object model element
     :param pos_t: position tuple (x, y)
     :param ref_t: reference tuple (x, y)
     :param scale_t: scale tuple (x,y,z)
     :return:
     """
 
+    # temporary to set breakpoint on circles
+    if item.tag == 'Circle':
+        print('got circle')
+
+    # scaling
     scale_m = np.array([[scale_t[0], 0], [0, scale_t[1]]])
+
+    # rotating
+    if ref_t[0] == 1:
+        theta = np.radians(0)
+    if ref_t[1] == 1:  # 90 anticlockwise around Y
+        theta = np.radians(90)
+    if ref_t[0] == -1:  # flip around x
+        theta = np.radians(-180)
+    if ref_t[1] == -1:  # flip around y
+        theta = np.radians(270)
+
+    c, s = np.cos(theta), np.sin(theta)
+    rotation_m = np.array(((c, -s), (s, c)))
+
+    def apply_transformation_to_coordinates_2d(obj_to_apply):
+        """
+        applies scale and rotation transfomation to X,Y points in provided object
+        :param obj_to_apply: XML node with attributes X and Y
+        :return:
+        """
+        point_m = np.array([float(obj_to_apply.attrib['X']), float(obj_to_apply.attrib['Y'])])
+        new_coords = scale_m.dot(point_m)
+        r_cords = rotation_m.dot(new_coords)
+        obj_to_apply.attrib['X'] = str(pos_t[0] + r_cords[0])
+        obj_to_apply.attrib['Y'] = str(pos_t[1] + r_cords[1])
 
     if item.find('Position') is not None:
         loc = item.find('Position').find('Location')
-        point_m = np.array([float(loc.attrib['X']), float(loc.attrib['Y'])])
-        new_coords = scale_m.dot(point_m)
-        loc.attrib['X'] = str(pos_t[0] + float(loc.attrib['X']))
-        loc.attrib['Y'] = str(pos_t[1] + float(loc.attrib['Y']))
-
-        # loc.attrib['X'] = str(new_coords[0] + float(loc.attrib['X']))
-        # loc.attrib['Y'] = str(new_coords[1] + float(loc.attrib['Y']))
+        apply_transformation_to_coordinates_2d(loc)
 
     for coordinate in item.findall('Coordinate'):
-        point_m = np.array([float(coordinate.attrib['X']), float(coordinate.attrib['Y'])])
-        new_coords = scale_m.dot(point_m)
-        if ref_t[1] == 1:  # 90 anticlockwise around Y
-            theta = np.radians(90)
-            c, s = np.cos(theta), np.sin(theta)
-            r_m = np.array(((c, -s), (s, c)))
-            r_cords = r_m.dot(new_coords)
-            new_coords = r_cords
-        coordinate.attrib['X'] = str(pos_t[0] + new_coords[0])
-        coordinate.attrib['Y'] = str(pos_t[1] + new_coords[1])
+        apply_transformation_to_coordinates_2d(coordinate)
 
-    # todo rotation angle
-    cos_phi = ref_t[0]
-    sin_phi = ref_t[1]
-
-    if abs(1 - (cos_phi ** 2 + sin_phi ** 2)) > 0.0001:
-        raise ValueError("Reference x**2 + y**2 must be equal to 1")
-
-    # todo scaling
+    # fixme need to find how to scale radius of a circle
+    if item.attrib.get('Radius') is not None:
+        item.attrib['Radius'] = str(float(item.attrib['Radius']) * scale_m[0][0])
 
     for child in item:
         set_scale_angle_pos(child, pos_t, ref_t, scale_t)
 
 
 def set_line_type(item, line_type):
+    """
+    function to set line type to a Proteus object
+    :param item: Proteus object with Presentation child
+    :param line_type: See Proteus reference for available line types
+    :return: None
+    """
     if item.find('Presentation') is not None:
         item.find('Presentation').attrib['LineType'] = line_type
 
 
 def set_line_weight(item, line_weight):
+    """
+    function to set line type to a Proteus object
+    :param item: Proteus object with Presentation child
+    :param line_type: See Proteus reference for available line types
+    :return: None
+    """
     if item.find('Presentation') is not None:
         item.find('Presentation').attrib['LineWeight'] = line_weight
+
+
+def process_shape_reference(node, shape_reference, ctx):
+    """
+    function to process an object from ShapeCatalogue referenced  by given node
+    and used to set correct position, scale and rotation angle
+    :param node: Proteus XML object
+    :param shape_reference: XML object fetched from ShapeCatalogue where tag is equal to node.tag and ComponentName
+    attribute is equal to node ComponentName attribute.
+    :param ctx: drawing context
+    :return: None
+    """
+    if shape_reference is not None:
+        pos_x, pos_y = map(lambda x: float(x) * ctx.units.value,
+                           itemgetter('X', 'Y')(node.find('Position').find('Location').attrib))
+        ref_x, ref_y = map(lambda x: float(x) * ctx.units.value,
+                           itemgetter('X', 'Y')(node.find('Position').find('Reference').attrib))
+        scale_x, scale_y, scale_z = map(lambda x: float(x) * ctx.units.value,
+                                        itemgetter('X', 'Y', 'Z')(node.find('Scale').attrib)) if node.find(
+            'Scale') is not None else (1, 1, 1)
+        idx = 1
+        for item in shape_reference:
+            if item.tag in ['Presentation', 'Extent', 'Position', 'GenericAttributes', 'Min', 'Max']:
+                continue
+            set_scale_angle_pos(item, (pos_x, pos_y), (ref_x, ref_y), (scale_x, scale_y, scale_z))
+            node.insert(idx, item)
+            idx += 1

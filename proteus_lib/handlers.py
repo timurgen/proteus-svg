@@ -13,7 +13,7 @@ import svgwrite
 from lxml import etree as xml
 
 from proteus_lib.proteus_utils import ensure_type, should_process_child, get_gen_attr_val, set_scale_angle_pos, \
-    set_line_type, set_line_weight
+    process_shape_reference
 from proteus_lib.color_utils import fetch_color_from_presentation
 from proteus_lib.model_context import Context
 from proteus_lib.line_utils import fetch_line_type_from_presentation
@@ -349,39 +349,31 @@ def extent_handler(node: xml.Element, ctx: Context) -> svgwrite.shapes.Rect:
 
 def equipment_handler(node: xml._Element, ctx: Context) -> svgwrite.container.Group:
     """
-    special case handler that process nothing and returns None
+    Handler to process Equipment object
     :param node: node to process
     :param ctx: model context
-    :return: always None
+    :return: SVG group object where Equipment parts will be added later
     """
     ensure_type(node, 'Equipment')
 
-    eq_group = create_group(ctx, node, 'Equipment')
+    eq_group = create_group(ctx, node)
 
     eq_group.attribs[DATA_LABEL] = get_gen_attr_val(node, 'ComosProperties', 'Label')
     eq_group.attribs[DATA_FULL_LABEL] = get_gen_attr_val(node, 'ComosProperties', 'FullLabel')
 
-    shape_reference = ctx.get_from_shape_catalog('Equipment', eq_group.attribs[DATA_COMPONENT_NAME])
-
-    if shape_reference is not None:
-        pos_x, pos_y = map(lambda x: float(x) * ctx.units.value,
-                           itemgetter('X', 'Y')(node.find('Position').find('Location').attrib))
-        ref_x, ref_y = map(lambda x: float(x) * ctx.units.value,
-                           itemgetter('X', 'Y')(node.find('Position').find('Reference').attrib))
-        scale_x, scale_y, scale_z = map(lambda x: float(x) * ctx.units.value,
-                                        itemgetter('X', 'Y', 'Z')(node.find('Scale').attrib)) if node.find(
-            'Scale') is not None else (1, 1, 1)
-        idx = 1
-        for item in shape_reference:
-            if item.tag in ['Presentation', 'Extent', 'Position', 'GenericAttributes']:
-                continue
-            set_scale_angle_pos(item, (pos_x, pos_y), (ref_x, ref_y), (scale_x, scale_y, scale_z))
-            node.insert(idx, item)
-            idx += 1
+    if eq_group.attribs.get(DATA_COMPONENT_NAME) is not None:
+        shape_reference = ctx.get_from_shape_catalog('Equipment', eq_group.attribs[DATA_COMPONENT_NAME])
+        process_shape_reference(node, shape_reference, ctx)
     return eq_group
 
 
 def nozzle_handler(node: xml._Element, ctx: Context) -> svgwrite.container.Group:
+    """
+    Handler to process Nozzle object
+    :param node: object to process
+    :param ctx: drawing context
+    :return: SVG group object
+    """
     ensure_type(node, 'Nozzle')
 
     eq_group = ctx.drawing.g()
@@ -392,49 +384,29 @@ def nozzle_handler(node: xml._Element, ctx: Context) -> svgwrite.container.Group
     eq_group.attribs[DATA_LABEL] = get_gen_attr_val(node, 'ComosProperties', 'Label')
     eq_group.attribs[DATA_FULL_LABEL] = get_gen_attr_val(node, 'ComosProperties', 'FullLabel')
 
-    pos_x, pos_y = map(lambda x: float(x) * ctx.units.value,
-                       itemgetter('X', 'Y')(node.find('Position').find('Location').attrib))
-    ref_x, ref_y = map(lambda x: float(x) * ctx.units.value,
-                       itemgetter('X', 'Y')(node.find('Position').find('Reference').attrib))
-    scale_x, scale_y, scale_z = map(lambda x: float(x) * ctx.units.value,
-                                    itemgetter('X', 'Y', 'Z')(node.find('Scale').attrib)) if node.find(
-        'Scale') is not None else (1, 1, 1)
-
     shape_reference = ctx.get_from_shape_catalog('Nozzle', eq_group.attribs[DATA_COMPONENT_NAME])
-    if shape_reference is not None:
-        pos_x, pos_y = map(lambda x: float(x) * ctx.units.value,
-                           itemgetter('X', 'Y')(node.find('Position').find('Location').attrib))
-        ref_x, ref_y = map(lambda x: float(x) * ctx.units.value,
-                           itemgetter('X', 'Y')(node.find('Position').find('Reference').attrib))
-        scale_x, scale_y, scale_z = map(lambda x: float(x) * ctx.units.value,
-                                        itemgetter('X', 'Y', 'Z')(node.find('Scale').attrib)) if node.find(
-            'Scale') is not None else (1, 1, 1)
-        idx = 1
-        for item in shape_reference:
-            if item.tag in ['Presentation', 'Extent', 'Position', 'GenericAttributes']:
-                continue
-            set_scale_angle_pos(item, (pos_x, pos_y), (ref_x, ref_y), (scale_x, scale_y, scale_z))
-            node.insert(idx, item)
-            idx += 1
-        # fixme refactor me to more reliable solution afterwhile
-        if ref_x == -1:
-            eq_group.scale(-1, 1)
-            eq_group.attribs['transform-origin'] = f'{pos_x} {-(pos_y - ctx.y_max)}'
-        elif ref_y == 1:
-            eq_group.rotate(-90)
-            eq_group.attribs['transform-origin'] = f'{pos_x} {-(pos_y - ctx.y_max)}'
-        elif ref_y == -1:
-            eq_group.rotate(90)
-            eq_group.attribs['transform-origin'] = f'{pos_x} {-(pos_y - ctx.y_max)}'
+    process_shape_reference(node, shape_reference, ctx)
     return eq_group
 
 
 def drawing_handler(node: xml.Element, ctx: Context) -> svgwrite.container.Group:
+    """
+    Handler to process Proteus Drawing node. This is a complex node which contains other nodes such as Label, Text, etc.
+    :param node: Drawing to process
+    :param ctx: drawing context
+    :return: SVG group object where other drawing parts will be added later
+    """
     ensure_type(node, 'Drawing')
-    return create_group(ctx, node, 'Drawing')
+    return create_group(ctx, node)
 
 
 def trimmed_curve_handler(node: xml.Element, ctx: Context):
+    """
+
+    :param node:
+    :param ctx:
+    :return:
+    """
     def process_circle(circle_node: xml.Element):
         ensure_type(circle_node, 'Circle')
         _presentation_obj = circle_node.find('Presentation')
@@ -461,40 +433,26 @@ def trimmed_curve_handler(node: xml.Element, ctx: Context):
 
 
 def piping_component_handler(node: xml._Element, ctx: Context):
+    """
+
+    :param node:
+    :param ctx:
+    :return:
+    """
     ensure_type(node, 'PipingComponent')
-    pipe_comp_group = create_group(ctx, node, 'PipingComponent')
+    pipe_comp_group = create_group(ctx, node)
     shape_reference = ctx.get_from_shape_catalog('PipingComponent', node.attrib.get('ComponentName'))
-    if shape_reference is not None:
-        pos_x, pos_y = map(lambda x: float(x) * ctx.units.value,
-                           itemgetter('X', 'Y')(node.find('Position').find('Location').attrib))
-        ref_x, ref_y = map(lambda x: float(x) * ctx.units.value,
-                           itemgetter('X', 'Y')(node.find('Position').find('Reference').attrib))
-        scale_x, scale_y, scale_z = map(lambda x: float(x) * ctx.units.value,
-                                        itemgetter('X', 'Y', 'Z')(node.find('Scale').attrib)) if node.find(
-            'Scale') is not None else (1, 1, 1)
-        idx = 1
-        for item in shape_reference:
-            if item.tag in ['Presentation', 'Extent', 'Position', 'GenericAttributes']:
-                continue
-            set_scale_angle_pos(item, (pos_x, pos_y), (ref_x, ref_y), (scale_x, scale_y, scale_z))
-            node.insert(idx, item)
-            idx += 1
-
-        # fixme refactor me to more reliable solution afterwhile
-        if ref_x == -1:
-            pipe_comp_group.scale(-1, 1)
-            pipe_comp_group.attribs['transform-origin'] = f'{pos_x} {-(pos_y - ctx.y_max)}'
-        elif ref_y == 1:
-            pipe_comp_group.rotate(-90)
-            pipe_comp_group.attribs['transform-origin'] = f'{pos_x} {-(pos_y - ctx.y_max)}'
-        elif ref_y == -1:
-            pipe_comp_group.rotate(90)
-            pipe_comp_group.attribs['transform-origin'] = f'{pos_x} {-(pos_y - ctx.y_max)}'
-
+    process_shape_reference(node, shape_reference, ctx)
     return pipe_comp_group
 
 
 def process_instrumentation_function_handler(node: xml._Element, ctx: Context):
+    """
+
+    :param node:
+    :param ctx:
+    :return:
+    """
     ensure_type(node, 'ProcessInstrumentationFunction')
 
     shape_reference = ctx.get_from_shape_catalog('ProcessInstrumentationFunction', node.attrib.get('ComponentName'))
@@ -514,12 +472,22 @@ def process_instrumentation_function_handler(node: xml._Element, ctx: Context):
             node.insert(idx, item)
             idx += 1
 
-    return create_group(ctx, node, 'ProcessInstrumentationFunction')
+    return create_group(ctx, node)
 
 
 def label_handler(node: xml._Element, ctx: Context) -> svgwrite.container.Group:
+    """
+
+    :param node:
+    :param ctx:
+    :return:
+    """
     ensure_type(node, 'Label')
-    return create_group(ctx, node, 'Label')
+
+    shape_reference = ctx.get_from_shape_catalog('Label', node.attrib.get('ComponentName'))
+    process_shape_reference(node, shape_reference, ctx)
+
+    return create_group(ctx, node)
 
 
 def dummy_handler(node: xml.Element, ctx: Context) -> None:
@@ -533,6 +501,13 @@ def dummy_handler(node: xml.Element, ctx: Context) -> None:
 
 
 def process_node(node: xml.Element, target: svgwrite.base.BaseElement, model_ctx: Context):
+    """
+    recursive function to process Proteus file starting from PlantModel node
+    :param node: a Proteus node, must be PlantItem when calling this function explicitly
+    :param target: svgwrite object to add result to
+    :param model_ctx: drawing context
+    :return: None
+    """
     node_type = node.tag
     logging.debug(f'processing {node_type} node')
 
@@ -550,28 +525,28 @@ def process_node(node: xml.Element, target: svgwrite.base.BaseElement, model_ctx
             process_node(child, result if result else target, model_ctx)
 
 
-def create_group(ctx, node, data_type):
+def create_group(ctx, node):
     """
-    Utility functio nto create SVG group
-    :param ctx:
-    :param node:
+    Utility function nto create SVG group used in some of handlers
+    :param ctx: drawing context
+    :param node: node to process
     :param data_type:
     :return:
     """
-    pipe_comp_group = ctx.drawing.g()
+    component_group = ctx.drawing.g()
 
-    pipe_comp_group.attribs[DATA_TYPE] = data_type
+    component_group.attribs[DATA_TYPE] = node.tag
 
     if node.attrib.get('ID') is not None:
-        pipe_comp_group.attribs['ID'] = node.attrib.get('ID')
+        component_group.attribs['ID'] = node.attrib.get('ID')
 
     if node.attrib.get('ComponentClass') is not None:
-        pipe_comp_group.attribs[DATA_COMPONENT_CLASS] = node.attrib.get('ComponentClass')
+        component_group.attribs[DATA_COMPONENT_CLASS] = node.attrib.get('ComponentClass')
 
     if node.attrib.get('ComponentName') is not None:
-        pipe_comp_group.attribs[DATA_COMPONENT_NAME] = node.attrib.get('ComponentName')
+        component_group.attribs[DATA_COMPONENT_NAME] = node.attrib.get('ComponentName')
 
     if node.attrib.get('TagName') is not None:
-        pipe_comp_group.attribs[DATA_TAG_NAME] = node.attrib.get('TagName')
+        component_group.attribs[DATA_TAG_NAME] = node.attrib.get('TagName')
 
-    return pipe_comp_group
+    return component_group
