@@ -4,7 +4,7 @@ import numpy as np
 
 COMPLEX_NODES = ['PlantModel', 'Drawing', 'Label', 'Nozzle', 'PipingNetworkSystem', 'PipeFlowArrow',
                  'PipingNetworkSegment', 'PipingComponent', 'Equipment', 'SignalLine', 'ActuatingSystem',
-                 'ActuatingSystemComponent', 'InformationFlow',
+                 'ActuatingSystemComponent', 'InformationFlow', 'ProcessInstrument', 'InstrumentComponent',
                  'ProcessInstrumentationFunction', 'PipeConnectorSymbol']
 
 
@@ -24,8 +24,8 @@ def ensure_type(obj: xml.Element, tag: str):
 def get_model_dimensions_from_plant_model(obj: xml._Element):
     """
     function to get drawing dimensions from PlantModel object
-    :param obj:
-    :return:
+    :param obj: PlantModel object
+    :return: minimum and maximum x and y values
     """
     ensure_type(obj, 'PlantModel')
 
@@ -68,8 +68,8 @@ def set_scale_angle_pos(item, pos_t, ref_t, scale_t):
         Equipment +
         PipingComponent +
         Nozzle +
-        ProcessInstrument
-        InstrumentComponent
+        ProcessInstrument+
+        InstrumentComponent+
         Component
         PipeConnector +
         SignalConnectorSymbol
@@ -84,11 +84,6 @@ def set_scale_angle_pos(item, pos_t, ref_t, scale_t):
     :param scale_t: scale tuple (x,y,z)
     :return:
     """
-
-    # temporary to set breakpoint on circles
-    if item.tag == 'Circle':
-        print('got circle')
-
     # scaling
     scale_m = np.array([[scale_t[0], 0], [0, scale_t[1]]])
 
@@ -96,8 +91,9 @@ def set_scale_angle_pos(item, pos_t, ref_t, scale_t):
     # The Reference is defined by the cosine and sine of the rotation angle. The x-value contains the cosine,
     # the y-value the sine of the rotation angle, with the rotation being measured anti-clockwise. In consequence
     # x^2 + y^2 = 1 must be fullfilled in order for the values to be correct.
-    if abs(1 - (ref_t[0]**2 + ref_t[1]**2)) > 0.0001:
+    if abs(1 - (ref_t[0] ** 2 + ref_t[1] ** 2)) > 0.0001:
         raise AssertionError("x^2 + y^2 = 1 must be full-filled in order for the reference values to be correct.")
+
     c, s = float(ref_t[0]), float(ref_t[1])
     rotation_m = np.array(((c, -s), (s, c)))
 
@@ -162,16 +158,15 @@ def process_shape_reference(node, shape_reference, ctx):
     :return: None
     """
     if shape_reference is not None:
-        pos_x, pos_y = map(lambda x: float(x) * ctx.units.value,
+        pos_x, pos_y = map(lambda x: float(x),
                            itemgetter('X', 'Y')(node.find('Position').find('Location').attrib))
-        ref_x, ref_y = map(lambda x: float(x) * ctx.units.value,
-                           itemgetter('X', 'Y')(node.find('Position').find('Reference').attrib))
-        scale_x, scale_y, scale_z = map(lambda x: float(x) * ctx.units.value,
+        ref_x, ref_y = map(lambda x: float(x), itemgetter('X', 'Y')(node.find('Position').find('Reference').attrib))
+        scale_x, scale_y, scale_z = map(lambda x: float(x),
                                         itemgetter('X', 'Y', 'Z')(node.find('Scale').attrib)) if node.find(
             'Scale') is not None else (1, 1, 1)
         idx = 1
         for item in shape_reference:
-            if item.tag in ['Presentation', 'Extent', 'Position', 'GenericAttributes', 'Min', 'Max']:
+            if item.tag in ['Presentation', 'Extent', 'Position', 'GenericAttributes', 'Min', 'Max', 'Description']:
                 continue
             set_scale_angle_pos(item, (pos_x, pos_y), (ref_x, ref_y), (scale_x, scale_y, scale_z))
             node.insert(idx, item)
