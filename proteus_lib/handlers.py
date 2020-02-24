@@ -84,8 +84,7 @@ def resolve_node_handler(node_type: str) -> Callable:
         return process_instrument_handler
     elif 'InstrumentComponent' == node_type:
         return instrument_component_handler
-    # raise NotImplementedError(f'handler for {node_type} is not implemented yet')
-    return dummy_handler
+    raise NotImplementedError(f'handler for {node_type} is not implemented yet')
 
 
 def line_handler(node: xml.Element, ctx: Context) -> svgwrite.shapes.Line:
