@@ -26,6 +26,8 @@ DATA_LABEL = 'data-label'
 DATA_FULL_LABEL = 'data-full-label'
 DATA_TAG_NAME = 'data-tag-name'
 
+ATTR_COMP_NAME = 'ComponentName'
+
 LINEBREAK_PATTERN = "\r\n|\r|\n|&#xD;&#xA;|&#xD;|&#xA;"
 
 
@@ -40,7 +42,7 @@ def resolve_node_handler(node_type: str) -> Callable:
                      'ShapeCatalogue', 'Position', 'DrawingBorder', 'PropertyBreak',
                      'Scale', 'PersistentID', 'GenericAttributes', 'ConnectionPoints', 'PipingNetworkSystem',
                      'PipeFlowArrow', 'PipingNetworkSegment', 'SignalLine', 'InformationFlow',
-                     'InstrumentationLoopFunction', 'NominalDiameter', 'PipeConnectorSymbol', 'CrossPageConnection']:
+                     'InstrumentationLoopFunction', 'NominalDiameter', 'CrossPageConnection']:
         return dummy_handler
 
     if 'Line' == node_type:
@@ -69,6 +71,8 @@ def resolve_node_handler(node_type: str) -> Callable:
         return label_handler
     elif 'ProcessInstrumentationFunction' == node_type:
         return process_instrumentation_function_handler
+    elif 'PipeConnectorSymbol' == node_type:
+        return pipe_connector_symbol_handler
     raise NotImplementedError(f'handler for {node_type} is not implemented yet')
 
 
@@ -379,7 +383,7 @@ def nozzle_handler(node: xml._Element, ctx: Context) -> svgwrite.container.Group
     eq_group = ctx.drawing.g()
     eq_group.attribs['ID'] = node.attrib.get('ID')
     eq_group.attribs[DATA_TYPE] = 'Nozzle'
-    eq_group.attribs[DATA_COMPONENT_NAME] = node.attrib.get('ComponentName')
+    eq_group.attribs[DATA_COMPONENT_NAME] = node.attrib.get(ATTR_COMP_NAME)
 
     eq_group.attribs[DATA_LABEL] = get_gen_attr_val(node, 'ComosProperties', 'Label')
     eq_group.attribs[DATA_FULL_LABEL] = get_gen_attr_val(node, 'ComosProperties', 'FullLabel')
@@ -407,6 +411,7 @@ def trimmed_curve_handler(node: xml.Element, ctx: Context):
     :param ctx:
     :return:
     """
+
     def process_circle(circle_node: xml.Element):
         ensure_type(circle_node, 'Circle')
         _presentation_obj = circle_node.find('Presentation')
@@ -441,7 +446,7 @@ def piping_component_handler(node: xml._Element, ctx: Context):
     """
     ensure_type(node, 'PipingComponent')
     pipe_comp_group = create_group(ctx, node)
-    shape_reference = ctx.get_from_shape_catalog('PipingComponent', node.attrib.get('ComponentName'))
+    shape_reference = ctx.get_from_shape_catalog('PipingComponent', node.attrib.get(ATTR_COMP_NAME))
     process_shape_reference(node, shape_reference, ctx)
     return pipe_comp_group
 
@@ -455,7 +460,7 @@ def process_instrumentation_function_handler(node: xml._Element, ctx: Context):
     """
     ensure_type(node, 'ProcessInstrumentationFunction')
 
-    shape_reference = ctx.get_from_shape_catalog('ProcessInstrumentationFunction', node.attrib.get('ComponentName'))
+    shape_reference = ctx.get_from_shape_catalog('ProcessInstrumentationFunction', node.attrib.get(ATTR_COMP_NAME))
     if shape_reference is not None:
         pos_x, pos_y = map(lambda x: float(x) * ctx.units.value,
                            itemgetter('X', 'Y')(node.find('Position').find('Location').attrib))
@@ -484,10 +489,28 @@ def label_handler(node: xml._Element, ctx: Context) -> svgwrite.container.Group:
     """
     ensure_type(node, 'Label')
 
-    shape_reference = ctx.get_from_shape_catalog('Label', node.attrib.get('ComponentName'))
+    shape_reference = ctx.get_from_shape_catalog('Label', node.attrib.get(ATTR_COMP_NAME))
     process_shape_reference(node, shape_reference, ctx)
 
     return create_group(ctx, node)
+
+
+def pipe_connector_symbol_handler(node: xml._Element, ctx: Context) -> svgwrite.container.Group:
+    ensure_type(node, 'PipeConnectorSymbol')
+
+    pipe_conn_group = create_group(ctx, node)
+
+    cross_page_conn = node.find('CrossPageConnection')
+    if cross_page_conn is not None:
+        pipe_conn_group.attribs['data-drawing-name'] = cross_page_conn.attrib.get('DrawingName')
+        pipe_conn_group.attribs['data-drawing-link-label'] = cross_page_conn.attrib.get('LinkLabel')
+        # todo we could also need support for CrossPageConnection with linkedPersistentId
+
+    if node.attrib.get(ATTR_COMP_NAME) is not None:
+        shape_reference = ctx.get_from_shape_catalog('PipeConnectorSymbol', node.attrib[ATTR_COMP_NAME])
+        process_shape_reference(node, shape_reference, ctx)
+
+    return pipe_conn_group
 
 
 def dummy_handler(node: xml.Element, ctx: Context) -> None:
@@ -543,8 +566,8 @@ def create_group(ctx, node):
     if node.attrib.get('ComponentClass') is not None:
         component_group.attribs[DATA_COMPONENT_CLASS] = node.attrib.get('ComponentClass')
 
-    if node.attrib.get('ComponentName') is not None:
-        component_group.attribs[DATA_COMPONENT_NAME] = node.attrib.get('ComponentName')
+    if node.attrib.get(ATTR_COMP_NAME) is not None:
+        component_group.attribs[DATA_COMPONENT_NAME] = node.attrib.get(ATTR_COMP_NAME)
 
     if node.attrib.get('TagName') is not None:
         component_group.attribs[DATA_TAG_NAME] = node.attrib.get('TagName')
