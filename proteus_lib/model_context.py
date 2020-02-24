@@ -34,3 +34,12 @@ class Context:
         if self.shape_catalog is not None:
             return deepcopy(self.shape_catalog.find(f'.//{node_type}[@ComponentName="{component_name}"]'))
         return None
+
+    def attributes_to_add_from_origin(self):
+        """
+        Method to map originating system to values that need to be extracted from GenericAttributes
+        :return:
+        """
+        _origin = self.origin.lower()
+        if _origin == 'comos':
+            return [{'set': 'ComosProperties', 'values': ['Label', 'FullLabel']}]
