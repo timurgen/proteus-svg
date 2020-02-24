@@ -28,6 +28,8 @@ DATA_TAG_NAME = 'data-tag-name'
 
 ATTR_COMP_NAME = 'ComponentName'
 
+DEFAULT_STROKE_COLOR = '#000000'
+
 LINEBREAK_PATTERN = "\r\n|\r|\n|&#xD;&#xA;|&#xD;|&#xA;"
 
 
@@ -39,9 +41,10 @@ def resolve_node_handler(node_type: str) -> Callable:
     """
     if node_type in ['Association', 'Connection', 'PlantModel', 'PlantInformation', 'PlantStructureItem', 'Extent',
                      'Presentation', 'ActuatingSystem', 'ActuatingSystemComponent', 'ActuatingFunction',
-                     'ShapeCatalogue', 'Position', 'DrawingBorder', 'PropertyBreak',
-                     'Scale', 'PersistentID', 'GenericAttributes', 'ConnectionPoints', 'PipingNetworkSystem',
-                     'PipeFlowArrow', 'PipingNetworkSegment', 'SignalLine', 'InformationFlow',
+                     'ShapeCatalogue', 'Position', 'DrawingBorder', 'PropertyBreak', 'Description',
+                     'Scale', 'PersistentID', 'GenericAttributes', 'ConnectionPoints', 'MinimumDesignPressure',
+                     'PipeFlowArrow', 'SignalLine', 'InformationFlow', 'MaximumDesignPressure',
+                     'MaximumDesignTemperature', 'MinimumDesignTemperature',
                      'InstrumentationLoopFunction', 'NominalDiameter', 'CrossPageConnection']:
         return dummy_handler
 
@@ -73,7 +76,16 @@ def resolve_node_handler(node_type: str) -> Callable:
         return process_instrumentation_function_handler
     elif 'PipeConnectorSymbol' == node_type:
         return pipe_connector_symbol_handler
-    raise NotImplementedError(f'handler for {node_type} is not implemented yet')
+    elif 'PipingNetworkSystem' == node_type:
+        return piping_network_system_handler
+    elif 'PipingNetworkSegment' == node_type:
+        return piping_network_segment_handler
+    elif 'ProcessInstrument' == node_type:
+        return process_instrument_handler
+    elif 'InstrumentComponent' == node_type:
+        return instrument_component_handler
+    # raise NotImplementedError(f'handler for {node_type} is not implemented yet')
+    return dummy_handler
 
 
 def line_handler(node: xml.Element, ctx: Context) -> svgwrite.shapes.Line:
@@ -252,10 +264,16 @@ def text_handler(node: xml.Element, ctx: Context) -> svgwrite.text.Text:
     if node.attrib.get('String'):
         text_arr = re.split(LINEBREAK_PATTERN, node.attrib.get('String'))
     else:
+        # todo add support for displaying values stored in generic attribute
+        # see 4.2.3.1 of DEXPI 1.2 spec
         return
     text_font = node.attrib.get('Font')
     text_size = round(float(node.attrib.get('Height')) * ctx.units.value)
-    text_color = fetch_color_from_presentation(node.find('Presentation'))
+
+    text_color = DEFAULT_STROKE_COLOR
+    if node.find('Presentation') is not None:
+        text_color = fetch_color_from_presentation(node.find('Presentation'))
+
     style = f'font-size:{text_size}px; font-family:{text_font}; fill:{text_color}'
 
     text_angle = float(node.attrib.get('TextAngle')) if node.attrib.get('TextAngle') is not None else 0
@@ -282,8 +300,12 @@ def text_handler(node: xml.Element, ctx: Context) -> svgwrite.text.Text:
     else:
         raise ValueError(f'Unknown justification {text_justification}')
 
+    text_pos = node.find('Position')
+    if text_pos is None:
+        text_pos = node.getparent().find('Position')
+
     text_pos_x, text_pos_y = map(lambda x: float(x) * ctx.units.value,
-                                 itemgetter('X', 'Y')(node.find('Position').find('Location').attrib))
+                                 itemgetter('X', 'Y')(text_pos.find('Location').attrib))
 
     text_obj = svgwrite.text.Text(text_arr[0], x=[text_pos_x],
                                   y=[ctx.y_max - text_pos_y - text_size / 2], style=style,
@@ -312,13 +334,13 @@ def circle_handler(node: xml.Element, ctx: Context) -> svgwrite.shapes.Circle:
         raise AssertionError(f'"Presentation" node expected but not found in Line node')
 
     stroke_color = fetch_color_from_presentation(presentation_obj)
-    stroke_width = float(presentation_obj.attrib.get('LineWeight'))
-    radius = float(node.attrib.get('Radius'))
+    stroke_width = float(presentation_obj.attrib.get('LineWeight')) * ctx.units.value
+    radius = float(node.attrib.get('Radius')) * ctx.units.value
     is_filled = True if node.attrib.get('Filled') else False
     coordinates = node.find('Position').find('Location')
-    x_pos, y_pos = itemgetter('X', 'Y')(coordinates.attrib)
+    x_pos, y_pos = map(lambda x: float(x) * ctx.units.value, itemgetter('X', 'Y')(coordinates.attrib))
 
-    circle = svgwrite.shapes.Circle((float(x_pos), ctx.y_max - float(y_pos)), radius,
+    circle = svgwrite.shapes.Circle((x_pos, ctx.y_max - y_pos), radius,
                                     fill='none' if not is_filled else stroke_color,
                                     stroke=stroke_color,
                                     style=f'stroke-width:{stroke_width}')
@@ -362,8 +384,24 @@ def equipment_handler(node: xml._Element, ctx: Context) -> svgwrite.container.Gr
 
     eq_group = create_group(ctx, node)
 
-    eq_group.attribs[DATA_LABEL] = get_gen_attr_val(node, 'ComosProperties', 'Label')
-    eq_group.attribs[DATA_FULL_LABEL] = get_gen_attr_val(node, 'ComosProperties', 'FullLabel')
+    # fixme this one will work with Comos but what if we get drawing from any other systems?
+    # eq_group.attribs[DATA_LABEL] = get_gen_attr_val(node, 'ComosProperties', 'Label')
+    # eq_group.attribs[DATA_FULL_LABEL] = get_gen_attr_val(node, 'ComosProperties', 'FullLabel')
+
+    # this it temporary fix for that
+    # attributes_to_add_from_origin method should be updated if we get new Proteus data sources
+    # probably we could move it into external config file instead of code
+    # probably we also need common data-* name's which do not depend on originating system
+    for attr in ctx.attributes_to_add_from_origin():
+        for attr_value in attr.get('values'):
+            key = f'data-{ctx.origin.lower()}-{attr_value.lower()}'
+            value = get_gen_attr_val(node, attr['set'], attr_value)
+            if value is not None:
+                eq_group.attribs[key] = value
+
+    descr_obj = node.find('Description')
+    if descr_obj is not None:
+        eq_group.attribs['data-description'] = descr_obj.text
 
     if eq_group.attribs.get(DATA_COMPONENT_NAME) is not None:
         shape_reference = ctx.get_from_shape_catalog('Equipment', eq_group.attribs[DATA_COMPONENT_NAME])
@@ -451,6 +489,34 @@ def piping_component_handler(node: xml._Element, ctx: Context):
     return pipe_comp_group
 
 
+def process_instrument_handler(node: xml._Element, ctx: Context):
+    """
+
+    :param node:
+    :param ctx:
+    :return:
+    """
+    ensure_type(node, 'ProcessInstrument')
+    pipe_comp_group = create_group(ctx, node)
+    shape_reference = ctx.get_from_shape_catalog('ProcessInstrument', node.attrib.get(ATTR_COMP_NAME))
+    process_shape_reference(node, shape_reference, ctx)
+    return pipe_comp_group
+
+
+def instrument_component_handler(node: xml._Element, ctx: Context):
+    """
+
+    :param node:
+    :param ctx:
+    :return:
+    """
+    ensure_type(node, 'InstrumentComponent')
+    pipe_comp_group = create_group(ctx, node)
+    shape_reference = ctx.get_from_shape_catalog('InstrumentComponent', node.attrib.get(ATTR_COMP_NAME))
+    process_shape_reference(node, shape_reference, ctx)
+    return pipe_comp_group
+
+
 def process_instrumentation_function_handler(node: xml._Element, ctx: Context):
     """
 
@@ -464,9 +530,8 @@ def process_instrumentation_function_handler(node: xml._Element, ctx: Context):
     if shape_reference is not None:
         pos_x, pos_y = map(lambda x: float(x) * ctx.units.value,
                            itemgetter('X', 'Y')(node.find('Position').find('Location').attrib))
-        ref_x, ref_y = map(lambda x: float(x) * ctx.units.value,
-                           itemgetter('X', 'Y')(node.find('Position').find('Reference').attrib))
-        scale_x, scale_y, scale_z = map(lambda x: float(x) * ctx.units.value,
+        ref_x, ref_y = map(lambda x: float(x), itemgetter('X', 'Y')(node.find('Position').find('Reference').attrib))
+        scale_x, scale_y, scale_z = map(lambda x: float(x),
                                         itemgetter('X', 'Y', 'Z')(node.find('Scale').attrib)) if node.find(
             'Scale') is not None else (1, 1, 1)
         idx = 1
@@ -513,6 +578,18 @@ def pipe_connector_symbol_handler(node: xml._Element, ctx: Context) -> svgwrite.
     return pipe_conn_group
 
 
+def piping_network_system_handler(node: xml._Element, ctx: Context) -> svgwrite.container.Group:
+    ensure_type(node, 'PipingNetworkSystem')
+    pn_sys_group = create_group(ctx, node)
+    return pn_sys_group
+
+
+def piping_network_segment_handler(node: xml._Element, ctx: Context) -> svgwrite.container.Group:
+    ensure_type(node, 'PipingNetworkSegment')
+    pn_sys_group = create_group(ctx, node)
+    return pn_sys_group
+
+
 def dummy_handler(node: xml.Element, ctx: Context) -> None:
     """
     special case handler that process nothing and returns None
@@ -548,28 +625,35 @@ def process_node(node: xml.Element, target: svgwrite.base.BaseElement, model_ctx
             process_node(child, result if result else target, model_ctx)
 
 
-def create_group(ctx, node):
+def create_group(ctx: Context, node: xml._Element) -> svgwrite.container.Group:
     """
     Utility function nto create SVG group used in some of handlers
     :param ctx: drawing context
     :param node: node to process
-    :param data_type:
-    :return:
+    :return: svgwrite.container.Group instance populated with shared attribute values (if exist) from Proteus node
     """
     component_group = ctx.drawing.g()
-
     component_group.attribs[DATA_TYPE] = node.tag
 
-    if node.attrib.get('ID') is not None:
-        component_group.attribs['ID'] = node.attrib.get('ID')
+    _id = node.attrib.get('ID')
+    if _id is not None:
+        component_group.attribs['id'] = _id
 
-    if node.attrib.get('ComponentClass') is not None:
-        component_group.attribs[DATA_COMPONENT_CLASS] = node.attrib.get('ComponentClass')
+    _comp_class = node.attrib.get('ComponentClass')
+    if _comp_class is not None:
+        component_group.attribs[DATA_COMPONENT_CLASS] = _comp_class
 
-    if node.attrib.get(ATTR_COMP_NAME) is not None:
-        component_group.attribs[DATA_COMPONENT_NAME] = node.attrib.get(ATTR_COMP_NAME)
+    _attr_comp_name = node.attrib.get(ATTR_COMP_NAME)
+    if _attr_comp_name is not None:
+        component_group.attribs[DATA_COMPONENT_NAME] = _attr_comp_name
 
-    if node.attrib.get('TagName') is not None:
-        component_group.attribs[DATA_TAG_NAME] = node.attrib.get('TagName')
+    _tag_name = node.attrib.get('TagName')
+    if _tag_name is not None:
+        component_group.attribs[DATA_TAG_NAME] = _tag_name
 
+    _spec = node.attrib.get('Specification')
+    if _spec is not None:
+        component_group.attribs['data-specification'] = _spec
+
+    component_group.attribs['class'] = ' '.join([node.tag, _comp_class if _comp_class is not None else ''])
     return component_group
