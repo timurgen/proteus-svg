@@ -71,7 +71,7 @@ def set_scale_angle_pos(item, pos_t, ref_t, scale_t):
         ProcessInstrument
         InstrumentComponent
         Component
-        PipeConnector
+        PipeConnector +
         SignalConnectorSymbol
         InsulationSymbol
         PropertyBreak
@@ -121,8 +121,9 @@ def set_scale_angle_pos(item, pos_t, ref_t, scale_t):
         apply_transformation_to_coordinates_2d(coordinate)
 
     # fixme need to find how to scale radius of a circle
-    if item.attrib.get('Radius') is not None:
-        item.attrib['Radius'] = str(float(item.attrib['Radius']) * scale_m[0][0])
+    # looks like if scale factor x is not equal to scale factor y than we need to turn circle into an ellipse
+    if item.tag == 'Circle' and item.attrib.get('Radius') is not None:
+        item.attrib['Radius'] = str(float(item.attrib['Radius']) * scale_t[1])
 
     for child in item:
         set_scale_angle_pos(child, pos_t, ref_t, scale_t)
