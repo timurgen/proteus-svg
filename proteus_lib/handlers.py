@@ -44,7 +44,7 @@ def resolve_node_handler(node_type: str) -> Callable:
                      'ShapeCatalogue', 'Position', 'DrawingBorder', 'PropertyBreak', 'Description',
                      'Scale', 'PersistentID', 'GenericAttributes', 'ConnectionPoints', 'MinimumDesignPressure',
                      'PipeFlowArrow', 'SignalLine', 'InformationFlow', 'MaximumDesignPressure',
-                     'MaximumDesignTemperature', 'MinimumDesignTemperature',
+                     'MaximumDesignTemperature', 'MinimumDesignTemperature', 'InstrumentLoop',
                      'InstrumentationLoopFunction', 'NominalDiameter', 'CrossPageConnection']:
         return dummy_handler
 
@@ -84,6 +84,8 @@ def resolve_node_handler(node_type: str) -> Callable:
         return process_instrument_handler
     elif 'InstrumentComponent' == node_type:
         return instrument_component_handler
+    elif 'Component' == node_type:
+        return component_handler
     raise NotImplementedError(f'handler for {node_type} is not implemented yet')
 
 
@@ -117,7 +119,7 @@ def line_handler(node: xml.Element, ctx: Context) -> svgwrite.shapes.Line:
     line = svgwrite.shapes.Line(start=(x_min_f, ctx.y_max - y_min_f),
                                 end=(x_max_f, ctx.y_max - y_max_f),
                                 stroke=stroke_color,
-                                style=f'stroke-width:{stroke_width}')
+                                stroke_width=stroke_width)
 
     line_type = fetch_line_type_from_presentation(presentation_obj)
     if line_type:
@@ -149,9 +151,8 @@ def centerline_handler(node: xml.Element, ctx: Context) -> svgwrite.path.Path:
 
     is_filled = True if node.attrib.get('Filled') else False
 
-    path = svgwrite.path.Path(None, stroke=stroke_color,
-                              fill='none' if not is_filled else stroke_color,
-                              style=f'stroke-width:{stroke_width}')
+    path = svgwrite.path.Path(None, stroke=stroke_color, fill='none' if not is_filled else stroke_color,
+                              stroke_width=stroke_width)
 
     start_point = True
     for coordinate in coordinates:
@@ -191,9 +192,8 @@ def polyline_handler(node: xml.Element, ctx: Context) -> svgwrite.path.Path:
 
     is_filled = True if node.attrib.get('Filled') else False
 
-    path = svgwrite.path.Path(None, stroke=stroke_color,
-                              fill='none' if not is_filled else stroke_color,
-                              style=f'stroke-width:{stroke_width}')
+    path = svgwrite.path.Path(None, stroke=stroke_color, fill='none' if not is_filled else stroke_color,
+                              stroke_width=stroke_width)
 
     start_point = True
     for coordinate in coordinates:
@@ -233,8 +233,7 @@ def shape_handler(node: xml.Element, ctx: Context) -> svgwrite.path.Path:
 
     is_filled = True if node.attrib.get('Filled') else False
 
-    path = svgwrite.path.Path(None, stroke=stroke_color,
-                              fill='none' if not is_filled else stroke_color,
+    path = svgwrite.path.Path(None, stroke=stroke_color, fill='none' if not is_filled else stroke_color,
                               style=f'stroke-width:{stroke_width}')
 
     start_point = True
@@ -441,12 +440,12 @@ def drawing_handler(node: xml.Element, ctx: Context) -> svgwrite.container.Group
     return create_group(ctx, node)
 
 
-def trimmed_curve_handler(node: xml.Element, ctx: Context):
+def trimmed_curve_handler(node: xml.Element, ctx: Context) -> svgwrite.path.Path:
     """
-
-    :param node:
-    :param ctx:
-    :return:
+    Handler to process Proteus TrimmedCurve node.
+    :param node: node to process
+    :param ctx: drawing context
+    :return: svgwrite.path.Path object
     """
 
     def process_circle(circle_node: xml.Element):
@@ -468,18 +467,19 @@ def trimmed_curve_handler(node: xml.Element, ctx: Context):
     start_angle, end_angle = map(float, itemgetter('StartAngle', 'EndAngle')(node.attrib))
 
     d = describe_arc(x, ctx.y_max - y, radius, start_angle, end_angle)
-    path = svgwrite.path.Path(d, stroke=stroke_color, fill='none', style=f'stroke-width:{stroke_width}')
+    path = ctx.drawing.path(d, stroke=stroke_color, fill='none', style=f'stroke-width:{stroke_width}')
     path.translate(0, (ctx.y_max - y) * 2)
     path.scale(1, -1)
     return path
 
 
-def piping_component_handler(node: xml._Element, ctx: Context):
+def piping_component_handler(node: xml._Element, ctx: Context) -> svgwrite.container.Group:
     """
-
-    :param node:
-    :param ctx:
-    :return:
+    Handler to process Proteus PipingComponent node. This is a complex node which contains other nodes
+    and can be referenced in ShapeCatalogue
+    :param node: node to process
+    :param ctx: drawing context
+    :return: svgwrite.container.Group object
     """
     ensure_type(node, 'PipingComponent')
     pipe_comp_group = create_group(ctx, node)
@@ -490,7 +490,8 @@ def piping_component_handler(node: xml._Element, ctx: Context):
 
 def process_instrument_handler(node: xml._Element, ctx: Context):
     """
-
+    Handler to process Proteus ProcessInstrument node. This is a complex node which contains other nodes
+    and can be referenced in ShapeCatalogue
     :param node:
     :param ctx:
     :return:
@@ -504,7 +505,8 @@ def process_instrument_handler(node: xml._Element, ctx: Context):
 
 def instrument_component_handler(node: xml._Element, ctx: Context):
     """
-
+    Handler to process Proteus InstrumentComponent node. This is a complex node which contains other nodes
+    and can be referenced in ShapeCatalogue
     :param node:
     :param ctx:
     :return:
@@ -518,7 +520,8 @@ def instrument_component_handler(node: xml._Element, ctx: Context):
 
 def process_instrumentation_function_handler(node: xml._Element, ctx: Context):
     """
-
+    Handler to process Proteus ProcessInstrumentationFunction node. This is a complex node which contains other nodes
+    and can be referenced in ShapeCatalogue
     :param node:
     :param ctx:
     :return:
@@ -526,27 +529,15 @@ def process_instrumentation_function_handler(node: xml._Element, ctx: Context):
     ensure_type(node, 'ProcessInstrumentationFunction')
 
     shape_reference = ctx.get_from_shape_catalog('ProcessInstrumentationFunction', node.attrib.get(ATTR_COMP_NAME))
-    if shape_reference is not None:
-        pos_x, pos_y = map(lambda x: float(x) * ctx.units.value,
-                           itemgetter('X', 'Y')(node.find('Position').find('Location').attrib))
-        ref_x, ref_y = map(lambda x: float(x), itemgetter('X', 'Y')(node.find('Position').find('Reference').attrib))
-        scale_x, scale_y, scale_z = map(lambda x: float(x),
-                                        itemgetter('X', 'Y', 'Z')(node.find('Scale').attrib)) if node.find(
-            'Scale') is not None else (1, 1, 1)
-        idx = 1
-        for item in shape_reference:
-            if item.tag in ['Presentation', 'Extent', 'Position', 'GenericAttributes']:
-                continue
-            set_scale_angle_pos(item, (pos_x, pos_y), (ref_x, ref_y), (scale_x, scale_y, scale_z))
-            node.insert(idx, item)
-            idx += 1
+    process_shape_reference(node, shape_reference, ctx)
 
     return create_group(ctx, node)
 
 
 def label_handler(node: xml._Element, ctx: Context) -> svgwrite.container.Group:
     """
-
+    Handler to process Proteus Label node. This is a complex node which contains other nodes
+    and can be referenced in ShapeCatalogue
     :param node:
     :param ctx:
     :return:
@@ -560,6 +551,12 @@ def label_handler(node: xml._Element, ctx: Context) -> svgwrite.container.Group:
 
 
 def pipe_connector_symbol_handler(node: xml._Element, ctx: Context) -> svgwrite.container.Group:
+    """
+    Handler to process Proteus PipeConnectorSymbol node. This is a complex node which contains other nodes
+    :param node:
+    :param ctx:
+    :return:
+    """
     ensure_type(node, 'PipeConnectorSymbol')
 
     pipe_conn_group = create_group(ctx, node)
@@ -578,14 +575,40 @@ def pipe_connector_symbol_handler(node: xml._Element, ctx: Context) -> svgwrite.
 
 
 def piping_network_system_handler(node: xml._Element, ctx: Context) -> svgwrite.container.Group:
+    """
+    Handler to process Proteus PipingNetworkSystem node. This is a complex node which contains other nodes
+    :param node:
+    :param ctx:
+    :return:
+    """
     ensure_type(node, 'PipingNetworkSystem')
     pn_sys_group = create_group(ctx, node)
     return pn_sys_group
 
 
 def piping_network_segment_handler(node: xml._Element, ctx: Context) -> svgwrite.container.Group:
+    """
+    Handler to process Proteus PipingNetworkSegment node. This is a complex node which contains other nodes
+    :param node:
+    :param ctx:
+    :return:
+    """
     ensure_type(node, 'PipingNetworkSegment')
     pn_sys_group = create_group(ctx, node)
+    return pn_sys_group
+
+
+def component_handler(node: xml._Element, ctx: Context) -> svgwrite.container.Group:
+    """
+    Handler to process Proteus Component node. This is a complex node which contains other nodes
+    :param node:
+    :param ctx:
+    :return:
+    """
+    ensure_type(node, 'Component')
+    pn_sys_group = create_group(ctx, node)
+    shape_reference = ctx.get_from_shape_catalog('Component', node.attrib.get(ATTR_COMP_NAME))
+    process_shape_reference(node, shape_reference, ctx)
     return pn_sys_group
 
 
@@ -626,9 +649,9 @@ def process_node(node: xml.Element, target: svgwrite.base.BaseElement, model_ctx
 
 def create_group(ctx: Context, node: xml._Element) -> svgwrite.container.Group:
     """
-    Utility function nto create SVG group used in some of handlers
+    Utility function to create SVG group used in some of handlers
     :param ctx: drawing context
-    :param node: node to process
+    :param node: node to create group from
     :return: svgwrite.container.Group instance populated with shared attribute values (if exist) from Proteus node
     """
     component_group = ctx.drawing.g()
@@ -654,5 +677,5 @@ def create_group(ctx: Context, node: xml._Element) -> svgwrite.container.Group:
     if _spec is not None:
         component_group.attribs['data-specification'] = _spec
 
-    component_group.attribs['class'] = ' '.join([node.tag, _comp_class if _comp_class is not None else ''])
+    component_group.attribs['class'] = ' '.join([node.tag, _comp_class if _comp_class is not None else '']).lower()
     return component_group
