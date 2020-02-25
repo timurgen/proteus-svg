@@ -416,17 +416,11 @@ def nozzle_handler(node: xml._Element, ctx: Context) -> svgwrite.container.Group
     """
     ensure_type(node, 'Nozzle')
 
-    eq_group = ctx.drawing.g()
-    eq_group.attribs['ID'] = node.attrib.get('ID')
-    eq_group.attribs[DATA_TYPE] = 'Nozzle'
-    eq_group.attribs[DATA_COMPONENT_NAME] = node.attrib.get(ATTR_COMP_NAME)
+    nozzle_group = create_group(ctx, node)
 
-    eq_group.attribs[DATA_LABEL] = get_gen_attr_val(node, 'ComosProperties', 'Label')
-    eq_group.attribs[DATA_FULL_LABEL] = get_gen_attr_val(node, 'ComosProperties', 'FullLabel')
-
-    shape_reference = ctx.get_from_shape_catalog('Nozzle', eq_group.attribs[DATA_COMPONENT_NAME])
+    shape_reference = ctx.get_from_shape_catalog('Nozzle', nozzle_group.attribs[DATA_COMPONENT_NAME])
     process_shape_reference(node, shape_reference, ctx)
-    return eq_group
+    return nozzle_group
 
 
 def drawing_handler(node: xml.Element, ctx: Context) -> svgwrite.container.Group:
@@ -677,5 +671,5 @@ def create_group(ctx: Context, node: xml._Element) -> svgwrite.container.Group:
     if _spec is not None:
         component_group.attribs['data-specification'] = _spec
 
-    component_group.attribs['class'] = ' '.join([node.tag, _comp_class if _comp_class is not None else '']).lower()
+    component_group.attribs['class'] = ' '.join(set([node.tag, _comp_class if _comp_class is not None else ''])).lower()
     return component_group
