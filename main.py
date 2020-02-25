@@ -46,7 +46,7 @@ def process_file():
                                 units=m_unit,
                                 shape_catalog=plant_model.find('ShapeCatalogue'))
 
-        set_bg_color(drawing, plant_model, model_context)
+        set_bg_color(drawing, plant_model)
 
         if grid is not None:
             add_grid(drawing, int(grid) if grid.isnumeric() else 10)
