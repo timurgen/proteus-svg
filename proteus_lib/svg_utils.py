@@ -2,29 +2,17 @@ import svgwrite
 import math
 
 from proteus_lib.color_utils import fetch_color_from_presentation
-from proteus_lib.model_context import Context
 
 
 def get_default(out_file_name, size, view_box, debug=False) -> svgwrite.Drawing:
     """
     creates and return SVG drawing element with default properties
 
-    <svg version="1.1" width="500%" height="500%" style="" xmlns="http://www.w3.org/2000/svg" overflow="scroll">
-     <defs>
-      <filter id="glow" x="-40%" y="-40%" width="200%" height="200%">
-       <feOffset result="offOut" in="SourceGraphic" dx="0" dy="0" />
-       <feGaussianBlur result="blurOut" in="offOut" stdDeviation="2" />
-       <feBlend in="SourceGraphic" in2="blurOut" mode="normal" />
-      </filter>
-      <style />
-     </defs>
-    </svg>
-
-    :param view_box:
-    :param size:
+    :param view_box: viewBox values eg (0, 0, 640, 480)
+    :param size: size tuple (width, height)
     :param debug: if svgwrite should be initialized in debug mode
     :param out_file_name: name of file where result will be stored
-    :return: drawing object
+    :return: svgwrite.Drawing object
     """
     drawing = svgwrite.Drawing(out_file_name, debug=debug, size=size)
     drawing.viewbox(*view_box)
@@ -34,11 +22,11 @@ def get_default(out_file_name, size, view_box, debug=False) -> svgwrite.Drawing:
 def polar_to_cartesian(x, y, radius, angle_degrees):
     """
     Function to convert polar coordinates to cartesian
-    :param x: x cood
-    :param y:
-    :param radius:
-    :param angle_degrees:
-    :return:
+    :param x: x coordinate of circle
+    :param y: y coordinate of circle
+    :param radius: circle radius
+    :param angle_degrees: angle where needed point is located on circle
+    :return: x, y coordinates for point on circle in Cartersian coordinate system
     """
     angle_radians = angle_degrees * math.pi / 180.0
     return x + (radius * math.cos(angle_radians)), y + (radius * math.sin(angle_radians))
@@ -46,7 +34,7 @@ def polar_to_cartesian(x, y, radius, angle_degrees):
 
 def describe_arc(x, y, radius, start_angle, end_angle):
     """
-    function to draw arcs of different radius and angle
+    function to draw circle based arcs of different radius and angle
     :param x:
     :param y:
     :param radius:
@@ -66,6 +54,12 @@ def describe_arc(x, y, radius, start_angle, end_angle):
 
 
 def add_grid(obj: svgwrite.Drawing, s=10):
+    """
+    function to add grid to SVG drawing, must be called after set_bg_color if used
+    :param obj: svgwrite.Drawing object
+    :param s: grid step
+    :return: None
+    """
     pattern_small_grid = obj.pattern(insert=None, size=(s, s), patternUnits='userSpaceOnUse')
     pattern_small_grid.attribs['id'] = "smallGrid"
     path_small = obj.path(f'M {s} 0 L 0 0 0 {s}', stroke='gray', fill='none', style=f'stroke-width:{0.5}')
@@ -86,9 +80,9 @@ def add_grid(obj: svgwrite.Drawing, s=10):
     obj.add(rect_grid)
 
 
-def set_bg_color(obj: svgwrite.Drawing, plant_model, ctx: Context):
+def set_bg_color(obj: svgwrite.Drawing, plant_model):
     """
-    function to set background color for SVG drawing
+    function to set background color for SVG drawing must be called before function add_grid if it used
     :param obj: drawing t oset color on
     :param plant_model: PlantModel proteus object
     :param ctx: model context
