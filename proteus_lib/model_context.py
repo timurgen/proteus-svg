@@ -43,3 +43,4 @@ class Context:
         _origin = self.origin.lower()
         if _origin == 'comos':
             return [{'set': 'ComosProperties', 'values': ['Label', 'FullLabel']}]
+        return []
