@@ -671,5 +671,6 @@ def create_group(ctx: Context, node: xml._Element) -> svgwrite.container.Group:
     if _spec is not None:
         component_group.attribs['data-specification'] = _spec
 
-    component_group.attribs['class'] = ' '.join(set([node.tag, _comp_class if _comp_class is not None else ''])).lower()
+    class_name = ' '.join(set([node.tag, _comp_class if _comp_class is not None else ''])).strip()
+    component_group.attribs['class'] = class_name
     return component_group
