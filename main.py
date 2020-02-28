@@ -18,8 +18,9 @@ APP = Flask(__name__)
 PARSER = xml.XMLParser(remove_comments=True)
 
 
-@APP.route('/', methods=['POST'])
-def process_file():
+@APP.route('/', defaults={'project_id': None}, methods=['POST'])
+@APP.route('/<project_id>', methods=['POST'])
+def process_file(project_id):
     debug = bool(request.args.get('debug'))
     grid = request.args.get('grid')
 
@@ -45,6 +46,10 @@ def process_file():
                                 origin=pl_info.attrib['OriginatingSystem'],
                                 units=m_unit,
                                 shape_catalog=plant_model.find('ShapeCatalogue'))
+
+        drawing.attribs['data-origin'] = model_context.origin
+        drawing.attribs['data-drawing'] = plant_model.find('Drawing').attrib.get('Name')
+        drawing.attribs['data-project'] = str(project_id)
 
         set_bg_color(drawing, plant_model)
 
