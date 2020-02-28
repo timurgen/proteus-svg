@@ -5,7 +5,7 @@ import numpy as np
 COMPLEX_NODES = ['PlantModel', 'Drawing', 'Label', 'Nozzle', 'PipingNetworkSystem', 'PipeFlowArrow',
                  'PipingNetworkSegment', 'PipingComponent', 'Equipment', 'SignalLine', 'ActuatingSystem',
                  'ActuatingSystemComponent', 'InformationFlow', 'ProcessInstrument', 'InstrumentComponent',
-                 'ProcessInstrumentationFunction', 'PipeConnectorSymbol']
+                 'ProcessInstrumentationFunction', 'PipeConnectorSymbol', 'DrawingBorder']
 
 
 def ensure_type(obj: xml.Element, tag: str):
